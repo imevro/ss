@@ -6,8 +6,14 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { db } from '@workspace/db'
 import * as schema from '@workspace/db/schema'
 
-const appleClientId = process.env.APPLE_CLIENT_ID
-const appleClientSecret = process.env.APPLE_CLIENT_SECRET
+const env = (key: string): string | undefined => {
+  const value = process.env[key]?.trim()
+  if (value === undefined || value === '') return undefined
+  return value
+}
+
+const appleClientId = env('APPLE_CLIENT_ID')
+const appleClientSecret = env('APPLE_CLIENT_SECRET')
 
 const socialProviders =
   appleClientId === undefined || appleClientSecret === undefined
@@ -16,7 +22,7 @@ const socialProviders =
         apple: {
           clientId: appleClientId,
           clientSecret: appleClientSecret,
-          appBundleIdentifier: process.env.APPLE_BUNDLE_ID,
+          appBundleIdentifier: env('APPLE_BUNDLE_ID'),
         },
       }
 

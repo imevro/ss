@@ -1,8 +1,8 @@
 /**
- * Таблицы better-auth. Поля сверены с версией 1.7: у account есть issuer,
- * на (issuer, accountId) стоит уникальность.
+ * Таблицы better-auth. Поля и индексы сверены с 1.7.7: колонку issuer
+ * версия не пишет, поэтому её тут нет.
  */
-import { boolean, index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import { boolean, index, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -35,7 +35,6 @@ export const account = pgTable(
   'account',
   {
     id: text('id').primaryKey(),
-    issuer: text('issuer').notNull(),
     accountId: text('account_id').notNull(),
     providerId: text('provider_id').notNull(),
     userId: text('user_id')
@@ -51,10 +50,7 @@ export const account = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex('account_issuer_account').on(t.issuer, t.accountId),
-    index('account_user').on(t.userId),
-  ],
+  (t) => [index('account_user').on(t.userId)],
 )
 
 export const verification = pgTable(

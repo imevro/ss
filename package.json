@@ -8,8 +8,8 @@
     "format": "turbo format",
     "typecheck": "turbo typecheck",
     "iso": "scripts/iso-setup.sh",
-    "db:generate": "bun run --cwd packages/db db:generate",
-    "db:migrate": "bun run --cwd packages/db db:migrate",
+    "db:generate": "cd packages/db && bun x drizzle-kit generate",
+    "db:migrate": "cd packages/db && bun x drizzle-kit migrate",
     "db": "docker compose exec -T db psql -U ss -d ss_core",
     "broker": "bun run --cwd apps/worker broker"
   },
