@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/client.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./step-log": "./src/step-log.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
