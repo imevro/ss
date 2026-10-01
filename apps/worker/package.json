@@ -12,6 +12,7 @@
   "dependencies": {
     "@workspace/core": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/logger": "workspace:*",
     "bunqueue": "^2.9.6"
   }
 }

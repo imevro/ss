@@ -3,7 +3,10 @@
  * Единственный процесс, который слушает порт.
  */
 import { Hono } from 'hono'
+import { createLogger } from '@workspace/logger'
 import { auth } from './auth'
+
+const log = createLogger('api')
 
 const app = new Hono()
 
@@ -28,4 +31,4 @@ const server = Bun.serve({
   fetch: app.fetch,
 })
 
-console.log(`[api] слушаю http://localhost:${server.port}`)
+log.info('слушаю', { url: `http://localhost:${server.port}` })

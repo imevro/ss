@@ -3,6 +3,9 @@
  * Брокер bunqueue живёт отдельным процессом — его не перезапускает релиз приложения.
  */
 import { Worker } from 'bunqueue/client'
+import { createLogger } from '@workspace/logger'
+
+const log = createLogger('worker')
 
 export type JobName = 'msg.ingest' | 'db.provision' | 'app.build'
 
@@ -35,7 +38,9 @@ const worker = new Worker(
   { connection, concurrency: 4 },
 )
 
-worker.on('completed', (job) => console.log('[worker] готово:', job.name))
-worker.on('failed', (job, error) => console.log('[worker] ошибка:', job.name, String(error)))
+worker.on('completed', (job) => log.info('задача выполнена', { job: job.name, id: job.id }))
+worker.on('failed', (job, error) =>
+  log.error('задача не выполнена', { job: job.name, id: job.id, error: String(error) }),
+)
 
-console.log('[worker] жду задачи из очереди ss')
+log.info('жду задачи', { queue: 'ss', broker: `${connection.host}:${connection.port}` })

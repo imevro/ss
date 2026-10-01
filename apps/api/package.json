@@ -12,6 +12,7 @@
     "@workspace/core": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/llm": "workspace:*",
+    "@workspace/logger": "workspace:*",
     "better-auth": "^1.7.7",
     "hono": "^4.13.12"
   }

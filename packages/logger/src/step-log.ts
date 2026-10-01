@@ -6,6 +6,9 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '@workspace/db'
 import { ctxSteps } from '@workspace/db/schema'
+import { createLogger } from './line-log'
+
+const log = createLogger('step-log')
 
 export type StepLogContext = {
   /** Прогон, к которому относится шаг. Вне очереди — 'anon'. */
@@ -154,7 +157,7 @@ const makeFinishHandle = (id: number, startedAtMs: number): StepHandle => ({
         })
         .where(and(eq(ctxSteps.id, id), eq(ctxSteps.kind, 'running')))
     } catch (error) {
-      console.error(`[step-log] закрытие не удалось: ${messageOf(error)}`)
+      log.error('закрытие шага не удалось', { id, error: messageOf(error) })
     }
   },
 })
@@ -182,7 +185,7 @@ export const logStep = {
       if (row === undefined) return NOOP_HANDLE
       return makeFinishHandle(row.id, startedAtMs)
     } catch (error) {
-      console.error(`[step-log] открытие не удалось: ${messageOf(error)}`)
+      log.error('открытие шага не удалось', { toolName: args.toolName, error: messageOf(error) })
       return NOOP_HANDLE
     }
   },
