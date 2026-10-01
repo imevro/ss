@@ -1,21 +1,46 @@
-# shadcn/ui monorepo template
+# ss
 
-This is a React Router monorepo template with shadcn/ui.
+Система, в которой у компании есть своя база данных, агент работает с ней, а из
+результатов публикуются миниаппы.
 
-## Adding components
+## Как устроено
 
-To add components to your app, run the following command at the root of your `web` app:
+- **`packages/core`** — правила предметной области: онбординг, схема предложения
+  таблиц. Чистые функции, без сети и базы.
+- **`packages/db`** — схемы таблиц ядра и схема журнала шагов, клиент базы,
+  настройка миграций.
+- **`packages/logger`** — журнал шагов: одна дверь для записи того, что делают
+  агент и воркер.
+- **`packages/llm`** — вызов модели по схеме: модель заполняет схему, решение о
+  годности принимает код.
+- **`apps/api`** — приложение на Hono: вход, проверка сессии, позже вебхук
+  телеграма и данные для миниаппов.
+- **`apps/worker`** — обработчик очереди: `msg.ingest`, `db.provision`, `app.build`.
+- **`apps/web`** — интерфейс на React Router.
+
+Подробности: `docs/architecture.md`, план на первый выпуск: `docs/mvp.md`.
+
+## Как запустить
+
+Нужны Bun и Docker (для базы).
 
 ```bash
-pnpm dlx shadcn@latest add button -c apps/web
+scripts/iso-setup.sh <имя сессии>   # отдельная копия проекта + база
 ```
 
-This will place the ui components in the `packages/ui/src/components` directory.
+Скрипт создаёт копию в `.worktrees/<имя>`, делает в ней `.env` из `.env.example`
+и поднимает базу Postgres на порту 5433. Дальше — в копии:
 
-## Using components
-
-To use the components in your app, import them from the `ui` package.
-
-```tsx
-import { Button } from "@workspace/ui/components/button";
+```bash
+bun install
+bun run db:migrate     # таблицы
+bun run broker         # очередь, отдельным процессом
+bun run dev            # api и web
 ```
+
+Проверка: `curl localhost:8787/health`.
+
+## Настройки
+
+Секретов в репозитории нет. Образец окружения — `.env.example`; рабочий файл
+создаёт скрипт изоляции, и в git он не попадает.
