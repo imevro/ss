@@ -1,0 +1,22 @@
+{
+  "name": "@workspace/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/client.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "db:generate": "bun --env-file=../../.env x drizzle-kit generate",
+    "db:migrate": "bun --env-file=../../.env x drizzle-kit migrate",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.3",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.11"
+  }
+}

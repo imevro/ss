@@ -1,0 +1,17 @@
+{
+  "name": "@workspace/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "broker": "bunqueue start --tcp-port 6789 --http-port 6790 --data-path .data/queue.db",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/core": "workspace:*",
+    "@workspace/db": "workspace:*",
+    "bunqueue": "^2.9.6"
+  }
+}

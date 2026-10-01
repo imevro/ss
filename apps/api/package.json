@@ -1,0 +1,18 @@
+{
+  "name": "@workspace/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/core": "workspace:*",
+    "@workspace/db": "workspace:*",
+    "@workspace/llm": "workspace:*",
+    "better-auth": "^1.7.7",
+    "hono": "^4.13.12"
+  }
+}

@@ -1,0 +1,21 @@
+# Ядро продукта: наша база. Базы компаний выписываются отдельно (см. docs/architecture.md §2).
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: ss-db
+    environment:
+      POSTGRES_USER: ss
+      POSTGRES_PASSWORD: ss
+      POSTGRES_DB: ss_core
+    ports:
+      - "5433:5432"
+    volumes:
+      - ss-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ss -d ss_core"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  ss-db:

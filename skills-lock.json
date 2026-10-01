@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "skills": {
+    "api-llm-generation-always-capped": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/api/api-llm-generation-always-capped/SKILL.md",
+      "computedHash": "399e187d86d27321fec1424344b682d91616037fabc3f6ba4c31e9f5823968c5"
+    },
+    "api-metered-call-spend-cap": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/api/api-metered-call-spend-cap/SKILL.md",
+      "computedHash": "a61a3bb94af7afd4e8ca1e7f8cfacf48cba5690e1cc77c09b7b4dc86884ab0f2"
+    },
+    "design-consulting-report-style": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/design/design-consulting-report-style/SKILL.md",
+      "computedHash": "59819698e1afd7e55d19687923afb8394a78fb2c20b5eb132bd5ca6cf4c444f5"
+    },
+    "design-motion-vocabulary": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/design/design-motion-vocabulary/SKILL.md",
+      "computedHash": "ff63e98535fa0420794745b54b175c0cf5ca4192032287903941f40eb839a1f5"
+    },
+    "design-no-cards-no-skeletons": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/design/design-no-cards-no-skeletons/SKILL.md",
+      "computedHash": "1f37ae7b93f205c4c4973f526665302a8ee2bd15d3aafd09c69d052fff406609"
+    },
+    "design-no-uppercase-labels": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/design/design-no-uppercase-labels/SKILL.md",
+      "computedHash": "0b031534447789195bdd6db94745e920482ec1bb17e37081374b0adb5ca1baf6"
+    },
+    "design-shadcn-components-only": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/design/design-shadcn-components-only/SKILL.md",
+      "computedHash": "25a54151e1b2b434885f05cb1ec5a0bd6ae0dc6881957bf5227e7391c3b8882c"
+    },
+    "design-tokens": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/design/design-tokens/SKILL.md",
+      "computedHash": "7e9c72c7a014d755b10aeca8baf87cd99b82a23d5ec91d4a91e09ca24f54ffaf"
+    },
+    "design-typography-rules": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/design/design-typography-rules/SKILL.md",
+      "computedHash": "e00dc21f789c6a840b77154ecbd243b71f6e4e13e22550a3b09cc5c4d6e04722"
+    },
+    "doc": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/commands/doc/SKILL.md",
+      "computedHash": "1061e0627536f62ad9e85b47aff08a3702ab9855d2a12e8b658fbd2293fa4f15"
+    },
+    "engineering-no-ai-slop": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/engineering-no-ai-slop/SKILL.md",
+      "computedHash": "c4120da73143b1db55c7c0d2f0737cd350080757ec9f0819ec46c7adb0e57bd3"
+    },
+    "engineering-no-workarounds-without-approval": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/engineering-no-workarounds-without-approval/SKILL.md",
+      "computedHash": "722b431f528b9ee5f5843a37c5436ba2f7dcce6775ac2ac279c89c0820e928bf"
+    },
+    "engineering-one-name-across-representations": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/engineering-one-name-across-representations/SKILL.md",
+      "computedHash": "a5043205f6208409aed48f42e5a2a575ac891579b6201fe95186a5e834c6a4f9"
+    },
+    "fp-purity-biome-unsafe-null-coalesce": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-biome-unsafe-null-coalesce/SKILL.md",
+      "computedHash": "7bcbf6cc14e048f3c24b3dc5ef19702dbb552b4e54e7ed37b5434129c6ac71a3"
+    },
+    "fp-purity-factories-not-classes": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-factories-not-classes/SKILL.md",
+      "computedHash": "0c78366417c0b998218120e53ed085bd946d738f0ec90517a2bfb8ad52b2de7c"
+    },
+    "fp-purity-fail-loud-no-fallbacks": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-fail-loud-no-fallbacks/SKILL.md",
+      "computedHash": "204f05d01062cd9dca551db9aa617d5ada3a0598651bf83dff6b8dd64edffe93"
+    },
+    "fp-purity-no-added-complexity": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-added-complexity/SKILL.md",
+      "computedHash": "b934e00768ee3a229f72af870437508017b70da0d2ddfe8ca926aa52d0b3ff1e"
+    },
+    "fp-purity-no-classes-pure-functions": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-classes-pure-functions/SKILL.md",
+      "computedHash": "88ac41b691a5c24cfb9d9c74ea313aa5899b5cf110f0828c1367f1fa3585a308"
+    },
+    "fp-purity-no-else": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-else/SKILL.md",
+      "computedHash": "6206c53d762dcbd585e24ee162671aa59cf8d0ad9ecc202a46ea970b9e3b5c79"
+    },
+    "fp-purity-no-fake-compliance-hacks": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-fake-compliance-hacks/SKILL.md",
+      "computedHash": "0b266bd01d7862cc82e85c9dc3965e689b23e26cfde88786c7cc9de1a029d5f8"
+    },
+    "fp-purity-no-magic-numbers": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-magic-numbers/SKILL.md",
+      "computedHash": "40668c3ac20a558ba6dceb8c69ddc9f4c662e472011a453a3f60641cc27bf345"
+    },
+    "fp-purity-no-mutability": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-mutability/SKILL.md",
+      "computedHash": "f98e363fb340f01b9ece9947b4d7f33672f462b731dd0cc485b0b56e51a16b2a"
+    },
+    "fp-purity-no-oop-react-mapping": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-oop-react-mapping/SKILL.md",
+      "computedHash": "8b318bdca4d4552f9b1899551a8511e9fb54eacb3fca23de7861b73f8c5cf3c6"
+    },
+    "fp-purity-no-overengineering": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-overengineering/SKILL.md",
+      "computedHash": "deabaa4912128b9d160a81fe182152d28a2c87f5b063c4b4b73dca1febe70249"
+    },
+    "fp-purity-no-ternaries": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-no-ternaries/SKILL.md",
+      "computedHash": "3b77d7ca72cd9af6bae3e406825fe690eb33d23cd1dda8510d0e62629edc94b5"
+    },
+    "fp-purity-preserve-null-semantics": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-preserve-null-semantics/SKILL.md",
+      "computedHash": "6efd56eb72ea5d5eb3f0bda103bd91495fed7ff0d76a06d11e9288e5b37dba95"
+    },
+    "fp-purity-strictness-rules": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/fp-purity/fp-purity-strictness-rules/SKILL.md",
+      "computedHash": "8796ea1c786a8e0ec4bfe914f306a7458c8a2fdb3a817345a609648c25bdf1ef"
+    },
+    "iso": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/commands/iso/SKILL.md",
+      "computedHash": "161663b3e9327f00031dff92c974cedfbba8d9c4c007b16f59bf058ddb83fd71"
+    },
+    "noslop": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/commands/noslop/SKILL.md",
+      "computedHash": "8f5ca46241a78d2e410c7a5d3e8d9f25aa8291ee18037fdd2c89f456defbba60"
+    },
+    "react-nextjs-file-conventions": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/react/react-nextjs-file-conventions/SKILL.md",
+      "computedHash": "459e686f0ab04939d5b4e60bb152ee28d5fa174f5a1c874e572b8ad14b2238ea"
+    },
+    "react-url-state-over-local-state": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/react/react-url-state-over-local-state/SKILL.md",
+      "computedHash": "8b6af4bab07d9635a9a2dda1dc8ec9f7e35753086761d8e4a55e21ac71069bc0"
+    },
+    "release": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/commands/release/SKILL.md",
+      "computedHash": "a98f2a53e9ebaf85662e314dc2f5266c69a402a8342eba933ead2bc4648e55f9"
+    },
+    "web-add-base-ui-component": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/web/web-add-base-ui-component/SKILL.md",
+      "computedHash": "6a2dd7d77fc08adbf697583e7881f3699c968c2857781d39fc773cb7c41b686b"
+    },
+    "web-dark-mode-pure-css": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/web/web-dark-mode-pure-css/SKILL.md",
+      "computedHash": "9df4fd23508c95858f15d3d68b59f25869478987a84e14797d6e40d0bba65e4b"
+    },
+    "web-page-title-composer": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/web/web-page-title-composer/SKILL.md",
+      "computedHash": "ce953a3ee14a0d0597d2fce09f5b1441feeebbbe5ad3202182e1fb6a0de1117b"
+    },
+    "web-seo-meta-helper": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/web/web-seo-meta-helper/SKILL.md",
+      "computedHash": "2c5141aee7b323255ca2e6024c80981da87175ec445d8abe43e5aa68460cc9bb"
+    },
+    "wrap": {
+      "source": "imevro/skills",
+      "sourceType": "github",
+      "skillPath": "skills/commands/wrap/SKILL.md",
+      "computedHash": "30e434c0e2b97e9ff00f47ba8841b2bc79b986a8258f2015eb24223ce0fe902c"
+    }
+  }
+}
