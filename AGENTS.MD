@@ -113,7 +113,11 @@ lives in [`.agents/memory/`](.agents/memory/), sorted by subject. Open the
 subject's `README.md` — it lists the topics — before you start any work that is
 not trivial. The links below point to subjects, not topics.
 
-Subjects: none yet. The directory appears with the first lesson.
+Subjects:
+
+- [agents](.agents/memory/agents/README.md) — how our API talks to the agent service.
+- [chat](.agents/memory/chat/README.md) — how the panel builds the thread and the work line.
+- [deploy](.agents/memory/deploy/README.md) — how we build, release and run our boxes.
 
 ## Adding a topic
 
@@ -136,3 +140,14 @@ something worth keeping:
    (`- [\`name\`](name.md) — one-line description`).
 5. Add the subject to the list above when you make its first file. **Link to
    subjects, not topics.**
+
+<!-- BEGIN:turborepo-agent-rules -->
+
+# This is NOT the Turborepo you know
+
+Turborepo configuration, task behavior, and CLI commands can vary between installed versions and may differ from your training data. Resolve the `turbo` package from this file's directory or relevant workspace; in monorepos, it may not be visible from the repository root. For example, run `node -p "require.resolve('turbo/package.json')"` from a workspace that depends on `turbo`.
+
+Read `docs/README.md` inside that installed package first, then read the relevant pages from its `docs/` directory before changing Turborepo configuration or commands. Heed deprecation notices. These bundled docs match the installed package version and are available without network access.
+
+This block is written and re-added by `turbo` before repository-scoped commands when an AI agent is detected. In the Turborepo source repository, its template is defined in `crates/turborepo-cli/src/cli/agent_guidance.rs`. Removing the managed block while updates are enabled means a later qualifying invocation will add it again. Set `"agentGuidance": false` in the root `turbo.json` or `turbo.jsonc` to opt out; this does not remove an existing block. Keep the block committed with your work to avoid an uncommitted change on the next agent invocation.
+<!-- END:turborepo-agent-rules -->

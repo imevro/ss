@@ -2,40 +2,45 @@
  * Воркер очереди. Один процесс, одна очередь, разные имена задач.
  * Брокер bunqueue живёт отдельным процессом — его не перезапускает релиз приложения.
  */
-import { Worker } from 'bunqueue/client'
+import { createLogger } from '@workspace/log';
+import type { IncomingMessage, JobName } from '@workspace/types';
+import { Worker } from 'bunqueue/client';
 
-export type JobName = 'msg.ingest' | 'db.provision' | 'app.build'
+import { config, setupLogging } from './env';
+import { ingestMessages } from './ingest';
+import { proposeFor } from './onboarding';
+import { provisionCompanyDatabase } from './provision';
 
-const connection = {
-  host: process.env.BUNQUEUE_HOST ?? '127.0.0.1',
-  port: Number(process.env.BUNQUEUE_PORT ?? 6789),
-}
+setupLogging();
+const log = createLogger('worker');
 
-const handlers: Record<JobName, (data: unknown) => Promise<unknown>> = {
-  'msg.ingest': async (data) => ({ ingested: data }),
-  'db.provision': async (data) => ({ provisioned: data }),
-  'app.build': async (data) => ({ built: data }),
-}
+const handlers: Record<JobName, (data: never) => Promise<unknown>> = {
+  'onboarding:proposal': (data) => proposeFor(data as { userId: string; business: string }),
+  'msg:ingest': (data) => {
+    const job = data as { companyId: string; messages: readonly IncomingMessage[] };
+    return ingestMessages(job.companyId, job.messages);
+  },
+  'db:provision': (data) => provisionCompanyDatabase(data as { companyId: string }),
+};
 
 const nameOf = (value: unknown): JobName | undefined => {
-  if (typeof value !== 'string') return undefined
-  if (value === 'msg.ingest') return 'msg.ingest'
-  if (value === 'db.provision') return 'db.provision'
-  if (value === 'app.build') return 'app.build'
-  return undefined
-}
+  if (value !== 'onboarding:proposal' && value !== 'msg:ingest' && value !== 'db:provision') return;
+  return value;
+};
 
 const worker = new Worker(
   'ss',
-  async (job) => {
-    const name = nameOf(job.name)
-    if (name === undefined) return { skipped: job.name }
-    return handlers[name](job.data)
+  (job) => {
+    const name = nameOf(job.name);
+    if (name === undefined) return Promise.resolve({ skipped: job.name });
+    return handlers[name](job.data as never);
   },
-  { connection, concurrency: 4 },
-)
+  { connection: { host: config.brokerHost, port: config.brokerPort }, concurrency: 4 },
+);
 
-worker.on('completed', (job) => console.log('[worker] готово:', job.name))
-worker.on('failed', (job, error) => console.log('[worker] ошибка:', job.name, String(error)))
+worker.on('completed', (job) => log.info('задача выполнена', { job: job.name, id: job.id }));
+worker.on('failed', (job, error) =>
+  log.error('задача не выполнена', { job: job.name, id: job.id, error: String(error) }),
+);
 
-console.log('[worker] жду задачи из очереди ss')
+log.info('жду задачи', { queue: 'ss', broker: `${config.brokerHost}:${config.brokerPort}` });

@@ -1,0 +1,22 @@
+// Hard canon: no error-hiding (engineering/dont-hide-errors-with-fallbacks.md).
+// A promise `.catch(() => <default>)` swallows the rejection and substitutes a fake value,
+// exactly like a fallback default — the failure vanishes and a wrong result ships quietly.
+// Let it reject to the route/job error-boundary, or handle the specific error explicitly.
+//
+// Empty `catch {}` is already banned by Biome's built-in noEmptyBlockStatements (biome.json).
+// The semantic `catch { return null/[]/0 }` / `catch { console.error(); continue }` shapes are
+// not statically detectable and are caught by the /noslop gate instead.
+language js
+
+`$p.catch(() => $body)` where {
+  $body <: or {
+    JsNullLiteralExpression(),
+    JsArrayExpression(),
+    JsObjectExpression(),
+    JsNumberLiteralExpression(),
+    JsStringLiteralExpression(),
+    JsParenthesizedExpression(),
+    `undefined`
+  },
+  register_diagnostic(span=$body, message="`.catch(() => <дефолт>)` глушит ошибку — дай промису реджектнуться к error-boundary или обработай конкретную ошибку явно (dont-hide-errors-with-fallbacks).")
+}

@@ -1,0 +1,9 @@
+// Hard style law: no ternary operators in logic (engineering/dont-use-ternaries.md).
+// JSX conditional rendering — `{cond ? <A/> : <B/>}` — is idiomatic React and stays
+// allowed, so ternaries inside a JSX expression container are excluded.
+language js
+
+`$cond ? $then : $else` where {
+  $cond <: not within JsxExpressionChild() ,
+  register_diagnostic(span=$cond, message="Тернарники забанены — используй if / early-return / computed-property (JSX-рендер исключён).")
+}

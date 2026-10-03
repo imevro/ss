@@ -1,0 +1,11 @@
+// Hard style law: no `let` anywhere (engineering/dont-use-mutability.md, repo-wide subset).
+// A reassigned `let` hides the outcome of a step inside mutation. Use `const` +
+// a small pure function with early returns, .map/.reduce/Array.from, or recursion.
+// Полный запрет изменчивости лежит рядом, в no-mutability.grit; он пока не подключён.
+language js
+
+$letDecl where {
+  $letDecl <: JsVariableDeclaration(),
+  $letDecl <: r"let[ \t][\s\S]*",
+  register_diagnostic(span=$letDecl, message="`let` забанен везде — const + чистая функция с early-return / .map/.reduce/Array.from (dont-use-mutability).")
+}

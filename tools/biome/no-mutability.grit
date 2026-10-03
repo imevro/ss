@@ -1,0 +1,78 @@
+// Hard canon: FP first, no mutability (engineering/dont-use-mutability.md).
+// ВНИМАНИЕ: правило НЕ подключено в biome.json — это осознанное исключение, а не
+// забытая настройка. Включение даёт 16 замечаний в уже написанном коде вне текущей
+// работы (apps/worker/src/provision.ts, packages/db/src/tenant.ts,
+// packages/log/src/line-log.ts, packages/ui/src/lib/merge-refs.ts,
+// apps/web/app/components/chat.tsx). Подключать его нужно вместе с разбором этих
+// мест — отдельной работой, а не попутно.
+//
+// Mutability hides observability: a step's outcome gets buried in a reassigned
+// `let outcome` instead of being the return value of a pure function. Banned:
+// `let`, every assignment expression (compound `+=`/…, reassignment, and
+// property/index mutation `obj.x = …` / `arr[i] = …`), `++`/`--`, in-place array
+// mutators, and `Object.assign` onto an existing object. `for…of` over a const
+// collection stays allowed (it reassigns nothing); `const` + `.map`/`.reduce`/
+// `.flatMap`/`Array.from`/recursion replace every accumulator and index loop.
+//
+// GritQL allows a single top-level pattern per plugin file, so sibling rules are
+// unioned with `or {}` (same idiom as no-fallback-defaults.grit). NOTE: Biome
+// 2.4.4 GritQL cannot parse compound-assign snippets (`$x += $y`) — they fail to
+// compile — so assignments are matched via the JsAssignmentExpression node, which
+// also covers property/index mutation. `let` is matched via the
+// JsVariableDeclaration node + an anchored `let ` regex (the `let $x = $y` snippet
+// matches nothing here).
+language js
+
+or {
+  $letDecl where {
+    $letDecl <: JsVariableDeclaration(),
+    $letDecl <: r"let[ \t][\s\S]*",
+    register_diagnostic(span=$letDecl, message="`let` забанен — мутабельность прячет observability в `let outcome`. const + чистая функция / .map/.reduce/Array.from/рекурсия (dont-use-mutability).")
+  },
+  $assign where {
+    $assign <: JsAssignmentExpression(),
+    register_diagnostic(span=$assign, message="Присваивание/мутация забанены — `+=`, reassignment, `obj.x = …`, `arr[i] = …`. Строй новое значение через const + spread/.map/reduce (dont-use-mutability).")
+  },
+  $postUpd where {
+    $postUpd <: JsPostUpdateExpression(),
+    register_diagnostic(span=$postUpd, message="`++`/`--` забанены — никакой мутабельности. Array.from/reduce/рекурсия (dont-use-mutability).")
+  },
+  $preUpd where {
+    $preUpd <: JsPreUpdateExpression(),
+    register_diagnostic(span=$preUpd, message="`++`/`--` забанены — никакой мутабельности (dont-use-mutability).")
+  },
+  `$a.push($args)` where {
+    register_diagnostic(span=$a, message="`.push()` забанен — массив иммутабелен. Строй через .map/.flatMap/spread (dont-use-mutability).")
+  },
+  `$a.unshift($args)` where {
+    register_diagnostic(span=$a, message="`.unshift()` забанен — [...new, ...arr] (dont-use-mutability).")
+  },
+  `$a.splice($args)` where {
+    register_diagnostic(span=$a, message="`.splice()` забанен — .slice/.filter/.toSpliced (dont-use-mutability).")
+  },
+  `$a.fill($args)` where {
+    register_diagnostic(span=$a, message="in-place `.fill()` забанен — Array.from({length},...) (dont-use-mutability).")
+  },
+  `$a.copyWithin($args)` where {
+    register_diagnostic(span=$a, message="`.copyWithin()` забанен — иммутабельный rebuild (dont-use-mutability).")
+  },
+  `$a.sort($args)` where {
+    register_diagnostic(span=$a, message="in-place `.sort()` забанен — .toSorted() (массив остаётся const; [...arr].sort() тоже забанен) (dont-use-mutability).")
+  },
+  `$a.sort()` where {
+    register_diagnostic(span=$a, message="in-place `.sort()` забанен — .toSorted() ([...arr].sort() тоже забанен) (dont-use-mutability).")
+  },
+  `$a.reverse()` where {
+    register_diagnostic(span=$a, message="in-place `.reverse()` забанен — .toReversed() ([...arr].reverse() тоже забанен) (dont-use-mutability).")
+  },
+  `$a.pop()` where {
+    register_diagnostic(span=$a, message="`.pop()` забанен — .slice(0,-1) / .at(-1) (dont-use-mutability).")
+  },
+  `$a.shift()` where {
+    register_diagnostic(span=$a, message="`.shift()` забанен — .slice(1) / [0] (dont-use-mutability).")
+  },
+  `Object.assign($t, $r)` where {
+    $t <: not JsObjectExpression(),
+    register_diagnostic(span=$t, message="`Object.assign(target,…)` мутирует существующий объект — используй spread {...a, ...b} (dont-use-mutability).")
+  }
+}

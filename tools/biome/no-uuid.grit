@@ -1,0 +1,15 @@
+// Жёсткий закон об номерах: UUID запрещены. Наш номер — nanoid с префиксом вида
+// `comp_…`, `chat_…`, ровно 20 знаков (packages/db/src/ids.ts, newId(kind)). Два
+// вида номеров в одной колонке — это уже случившаяся миграция, поэтому выпускать
+// uuid из кода нельзя нигде. Номера делает только `newId`: свой выпуск в обход
+// него — второй вид номера.
+language js
+
+or {
+  `crypto.randomUUID($_)` as $call where {
+    register_diagnostic(span=$call, message="randomUUID забанен — номер даёт только newId(kind) из packages/db/src/ids.ts (nanoid с префиксом, 20 знаков).")
+  },
+  `randomUUID($_)` as $call where {
+    register_diagnostic(span=$call, message="randomUUID забанен — номер даёт только newId(kind) из packages/db/src/ids.ts (nanoid с префиксом, 20 знаков).")
+  }
+}

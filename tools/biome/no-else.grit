@@ -1,0 +1,9 @@
+// Hard style law: no `else` — covers `else if` and braceless forms (engineering/dont-use-else.md).
+// Branching over one string/enum value belongs in a Record lookup map; heterogeneous
+// conditions become guard clauses `if (x) { …; return/throw }` followed by a
+// straight-line return. Loops never guard-continue — rewrite with filter/map/flatMap.
+language js
+
+JsElseClause() as $else where {
+  register_diagnostic(span=$else, message="`else` забанен — Record-маппер или guard `if (x) { …; return/throw }` + прямой return (engineering/dont-use-else.md).")
+}

@@ -4,15 +4,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
+    "dev": "bun --env-file=../../.env --watch src/index.ts",
+    "start": "bun --env-file=../../.env src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@workspace/core": "workspace:*",
+    "@scalar/hono-api-reference": "^0.12.8",
+    "@workspace/companies": "workspace:*",
     "@workspace/db": "workspace:*",
-    "@workspace/llm": "workspace:*",
+    "@workspace/log": "workspace:*",
+    "@workspace/types": "workspace:*",
     "better-auth": "^1.7.7",
-    "hono": "^4.13.12"
+    "bunqueue": "^2.9.6",
+    "drizzle-orm": "^0.45.3",
+    "grammy": "^1.46.0",
+    "hono": "^4.13.12",
+    "hono-openapi": "^1.3.3",
+    "xsai": "^0.5.1",
+    "zod": "^4.6.5"
   }
 }

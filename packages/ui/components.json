@@ -19,5 +19,9 @@
   },
   "rtl": false,
   "menuColor": "default",
-  "menuAccent": "subtle"
+  "menuAccent": "subtle",
+  "registries": {
+    "@nexus-ui": "https://nexus-ui.dev/r/{name}.json",
+    "@agentui": "https://www.agentui.pro/r/{name}.json"
+  }
 }
