@@ -9,7 +9,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ChatEvent, LogEntry } from '@workspace/types';
 
-import { fold, stateOf } from './chat-state';
+import { fold, stateOf, workOfStored } from './chat-state';
 
 const at = (seconds: number): string => new Date(Date.UTC(2026, 0, 1, 0, 0, seconds)).toISOString();
 
@@ -129,15 +129,23 @@ describe('сведение журнала', () => {
     expect(assistant.map((message) => message.text)).toEqual(['Привет! Чем помочь?']);
   });
 
-  test('ход без связки по номеру не показывается в конце второй раз', () => {
-    // Страница закрылась посреди хода: связка с записью не дошла, номера у реплик
-    // журнала временные. Ход уже в базе — в ленте он должен стоять один раз и на месте.
+  test('ход приходит и из журнала, и из базы, а показывается один раз', () => {
+    // Номер записи приходит первым кадром хода: реплика журнала и запись базы — одна
+    // и та же реплика. Без этого номера ход показался бы в ленте дважды.
     const stored = [
       { id: 'db1', role: 'user', text: 'вопрос', sent_at: at(0) },
       { id: 'db2', role: 'assistant', text: 'ответ', sent_at: at(3) },
       { id: 'db3', role: 'user', text: 'следующий', sent_at: at(9) },
     ];
-    const state = stateOf(stored, log([ask('m1', 'вопрос'), { kind: 'started' }, { kind: 'chunk', text: 'ответ' }]));
+    const state = stateOf(
+      stored,
+      log([
+        ask('m1', 'вопрос'),
+        { kind: 'asked', id: 'm1', messageId: 'db1' },
+        { kind: 'started', messageId: 'db2' },
+        { kind: 'chunk', text: 'ответ' },
+      ]),
+    );
     expect(state.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
       'user:вопрос',
       'assistant:ответ',
@@ -188,6 +196,33 @@ describe('сведение журнала', () => {
       [],
     );
     expect(state.messages[0]?.storedWork).toBeUndefined();
+  });
+
+  test('запись идущего хода показывает ход идущим: конца у неё нет', () => {
+    // Страницу обновили посреди хода: ход читается из записи и продолжает идти.
+    const work = workOfStored(
+      {
+        seconds: 3,
+        names: ['bash'],
+        thoughts: 1,
+        calls: [{ name: 'bash', intent: 'Смотрю файлы' }],
+        thinking: true,
+        endedAt: null,
+      },
+      at(3),
+    );
+    expect(work.thinking).toBe(true);
+    expect(work.endedAt).toBeNull();
+    expect(work.startedAt).toBe(at(3));
+    expect(work.calls.map((call) => call.intent)).toEqual(['Смотрю файлы']);
+  });
+
+  test('записанный ответ показывает ход законченным: часы идут от длительности', () => {
+    const work = workOfStored({ seconds: 7, names: ['bash', 'read'], thoughts: 2 }, at(7));
+    expect(work.thinking).toBe(false);
+    expect(work.endedAt).toBe(at(7));
+    expect(work.startedAt).toBe(at(0));
+    expect(work.calls.map((call) => call.name)).toEqual(['bash', 'read']);
   });
 
   test('второй вопрос виден сразу, а после прихода ленты не двоится', () => {

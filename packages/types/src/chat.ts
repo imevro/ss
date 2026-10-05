@@ -26,6 +26,12 @@ export type StoredWork = {
   /** Имена позванных инструментов по порядку вызова: число считает показывающий. */
   readonly names: readonly string[];
   readonly thoughts: number;
+  /** Полный список хода: имя и замысел. Идущий ход несёт его, записанный — тоже. */
+  readonly calls?: readonly ToolCall[];
+  /** Идёт ли ещё ход. Записанный и законченный — false. */
+  readonly thinking?: boolean;
+  /** Конец хода. У идущего хода конца нет — по нему видно, что ход ещё идёт. */
+  readonly endedAt?: string | null;
 };
 
 /** Реплика ленты. Собирается переигрыванием, а не приходит с сервера целиком. */
@@ -46,7 +52,7 @@ export const LIVE_ID = 'live';
 export type ChatEvent =
   | { readonly kind: 'ask'; readonly id: string; readonly text: string; readonly at: string }
   | { readonly kind: 'asked'; readonly id: string; readonly messageId: string }
-  | { readonly kind: 'started' }
+  | { readonly kind: 'started'; readonly messageId?: string }
   | { readonly kind: 'chunk'; readonly text: string }
   | { readonly kind: 'live'; readonly calls: readonly ToolCall[]; readonly thinking: boolean }
   | { readonly kind: 'thought' }
@@ -56,63 +62,7 @@ export type ChatEvent =
 /** Запись журнала: единственное, что хранится. Состояние из неё выводится. */
 export type LogEntry = { readonly at: string; readonly event: ChatEvent };
 
-/** Ключ хранилища: журнал чата. Один на чат, как ключ у сессии агента. */
-export const logKey = (conversationId: string): string => `ss.chat.${conversationId}`;
-
-/**
- * Разбор записи журнала. Хранилище — чужие байты: испорченная запись пропускается,
- * а не ломает ленту. Пустая строка вместо разбора тоже годится.
- */
-const EVENT_KINDS: Readonly<Record<string, string>> = {
-  ask: 'ask',
-  started: 'started',
-  chunk: 'chunk',
-  live: 'live',
-  thought: 'thought',
-  failed: 'failed',
-  asked: 'asked',
-  ended: 'ended',
-};
-
-const isKind = (value: unknown): value is ChatEvent['kind'] => {
-  if (typeof value !== 'string') return false;
-  return EVENT_KINDS[value] !== undefined;
-};
-
-/**
- * Чтение события из хранилища по видам: у каждого вида свой разбор своих полей.
- * Разборы — таблица, а не лестница ветвей: новый вид добавляется одной строкой.
- */
-const READERS: Readonly<Record<string, (frame: Record<string, unknown>) => ChatEvent | undefined>> = {
-  ask: (frame) => {
-    if (typeof frame.id !== 'string' || typeof frame.text !== 'string' || typeof frame.at !== 'string') return;
-    return { kind: 'ask', id: frame.id, text: frame.text, at: frame.at };
-  },
-  asked: (frame) => {
-    if (typeof frame.id !== 'string' || typeof frame.messageId !== 'string') return;
-    return { kind: 'asked', id: frame.id, messageId: frame.messageId };
-  },
-  chunk: (frame) => {
-    if (typeof frame.text !== 'string') return;
-    return { kind: 'chunk', text: frame.text };
-  },
-  live: (frame) => {
-    if (!Array.isArray(frame.calls)) return;
-    return { kind: 'live', calls: callsOf(frame.calls), thinking: frame.thinking === true };
-  },
-  failed: (frame) => {
-    if (typeof frame.reason !== 'string') return;
-    return { kind: 'failed', reason: frame.reason };
-  },
-  ended: (frame) => {
-    if (typeof frame.messageId !== 'string') return { kind: 'ended' };
-    return { kind: 'ended', messageId: frame.messageId };
-  },
-  started: () => ({ kind: 'started' }),
-  thought: () => ({ kind: 'thought' }),
-};
-
-/** Список вызовов из хранилища: испорченный вызов пропускается, целые берутся. */
+/** Список вызовов: испорченный вызов пропускается, целые берутся. */
 const callsOf = (value: readonly unknown[]): readonly ToolCall[] =>
   value.flatMap((call) => {
     if (typeof call !== 'object' || call === null) return [];
@@ -121,23 +71,16 @@ const callsOf = (value: readonly unknown[]): readonly ToolCall[] =>
     return [{ name: named.name, intent: named.intent }];
   });
 
-/** Событие из хранилища: свои поля проверяются, потому что байты приходят снаружи. */
-export const eventOfStored = (value: unknown): ChatEvent | undefined => {
-  if (typeof value !== 'object' || value === null) return;
-  const frame = value as Record<string, unknown>;
-  const kind = frame.kind;
-  if (!isKind(kind)) return;
-  return READERS[kind]?.(frame);
+/** Список вызовов из поля: поля нет или он чужой — пустой список. */
+const callsOfField = (value: unknown): readonly ToolCall[] => {
+  if (!Array.isArray(value)) return [];
+  return callsOf(value);
 };
 
-/** Запись журнала: момент и событие. Испорченная запись пропускается целиком. */
-export const entryOfStored = (value: unknown): LogEntry | undefined => {
-  if (typeof value !== 'object' || value === null) return;
-  const frame = value as Record<string, unknown>;
-  if (typeof frame.at !== 'string') return;
-  const event = eventOfStored(frame.event);
-  if (event === undefined) return;
-  return { at: frame.at, event };
+/** Конец хода из поля: не время — ход ещё идёт, конца у него нет. */
+const endedAtOfField = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  return value;
 };
 
 /**
@@ -157,19 +100,16 @@ export const workOfRaw = (raw: unknown): StoredWork | undefined => {
     if (typeof name !== 'string') return [];
     return [name];
   });
-  return { seconds: fields.seconds, names, thoughts: fields.thoughts };
-};
-
-/** Журнал из хранилища: байты, которые не читаются, дают пустой журнал. */
-export const logOfStored = (raw: string | null): readonly LogEntry[] => {
-  if (raw === null || raw === '') return [];
-  const parsed = parseJson(raw);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.flatMap((value) => {
-    const entry = entryOfStored(value);
-    if (entry === undefined) return [];
-    return [entry];
-  });
+  const calls = callsOfField(fields.calls);
+  const endedAt = endedAtOfField(fields.endedAt);
+  return {
+    seconds: fields.seconds,
+    names,
+    thoughts: fields.thoughts,
+    calls,
+    thinking: fields.thinking === true,
+    endedAt,
+  };
 };
 
 /** Сырое поле из базы: строка с байтами JSON разбирается, готовое значение идёт как есть. */

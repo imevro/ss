@@ -20,7 +20,12 @@ export const conversationRoom = (conversationId: string): string => `conversatio
  */
 export type ClientEvent =
   | { readonly kind: 'proposal'; readonly proposal: unknown }
-  | { readonly kind: 'started'; readonly conversationId: string }
+  | {
+      readonly kind: 'started';
+      readonly conversationId: string;
+      /** Номер записи ответа: ход заводится в базе сразу, страница знает его первым кадром. */
+      readonly messageId?: string;
+    }
   | { readonly kind: 'chunk'; readonly conversationId: string; readonly text: string }
   /** Название чата: приходит, как только модель его придумала. */
   | { readonly kind: 'titled'; readonly conversationId: string; readonly title: string }

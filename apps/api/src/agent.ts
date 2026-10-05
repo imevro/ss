@@ -9,7 +9,7 @@
 import { chatTitle } from '@workspace/companies';
 import { agentSessions, db, newId, platformSql } from '@workspace/db';
 import { createLogger } from '@workspace/log';
-import type { ToolCall } from '@workspace/types';
+import type { StoredWork, ToolCall } from '@workspace/types';
 import { conversationRoom } from '@workspace/types';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -119,24 +119,97 @@ const genticKeyOf = async (companyId: string, conversationId: string): Promise<s
   return settled.key;
 };
 
-/**
- * Ход работы целиком за время хода. Копится здесь, ложится в запись ответа вместе
- * с текстом: страница берёт строку из записи и показывает её с первого кадра.
- */
-export type TurnWork = {
-  readonly seconds: number;
-  readonly names: readonly string[];
+/** Ход работы кладётся в запись ответа: вид у него общий с показывающим. */
+
+type Answer = {
+  readonly text: string;
+  readonly messageId: string | undefined;
+  readonly startedAt: number;
+  readonly state: TurnState;
+};
+
+/** Состояние хода на сейчас: текст, позванные инструменты, мысли. */
+type TurnState = {
+  readonly text: string;
+  readonly calls: readonly ToolCall[];
+  readonly thinking: boolean;
   readonly thoughts: number;
 };
 
-type Answer = { readonly text: string; readonly work: TurnWork };
+/** Сколько кусков копим между записями: чаще — лишние записи, реже — больше терять. */
+const WRITE_EVERY_CHUNKS = 25;
 
 /**
- * Спросить агента и провести ответ в чат. Возвращает текст ответа и ход работы.
- * Работа идёт на глазах человека: куски уходят в комнату чата.
+ * Запись ответа заводится с началом хода и обновляется по ходу. Поэтому у хода есть
+ * место в ленте с первой секунды, а страница, обновлённая посреди хода, читает его из
+ * базы: второй правды на стороне браузера нет.
+ */
+const openTurn = async (companyId: string, conversationId: string, messageId: string): Promise<void> => {
+  const tenant = await platformSql(companyId);
+  if (tenant === undefined) return;
+  // Начало хода кладём сразу: даже обновление в первую секунду показывает, что ход идёт.
+  const work: StoredWork = { seconds: 0, names: [], thoughts: 0, calls: [], thinking: true, endedAt: null };
+  await tenant`
+    INSERT INTO ctx.messages (id, conversation_id, role, author_name, text, raw)
+    VALUES (${messageId}, ${conversationId}, ${'assistant'}, ${'агент'}, ${''}, ${rawOf(work)})
+  `;
+};
+
+/** Сырое поле записи: ход работы лежит под ключом `work` и нигде больше. */
+const rawOf = (work: StoredWork): { readonly work: StoredWork } => ({ work });
+
+/** Думает ли ход: законченный ход уже не думает. */
+const thinkingOf = (ended: boolean, thinking: boolean): boolean => {
+  if (ended) return false;
+  return thinking;
+};
+
+/** Конец хода: время, когда ход закрыли. У идущего хода конца нет. */
+const endedAtOf = (ended: boolean): string | null => {
+  if (!ended) return null;
+  return new Date().toISOString();
+};
+
+/** Шаг хода лёг в запись: текст, ход работы и признак конца. */
+const writeTurn = async (
+  companyId: string,
+  messageId: string,
+  startedAt: number,
+  state: TurnState,
+  ended: boolean,
+): Promise<void> => {
+  const tenant = await platformSql(companyId);
+  if (tenant === undefined) return;
+  const work: StoredWork = {
+    // Работа была, раз ответ пришёл: показываем хотя бы секунду, а не «0s».
+    seconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
+    names: state.calls.map((call) => call.name),
+    thoughts: state.thoughts,
+    calls: state.calls,
+    thinking: thinkingOf(ended, state.thinking),
+    // Конец хода. У идущего его нет — по нему видно, что ход ещё идёт.
+    endedAt: endedAtOf(ended),
+  };
+  const raw = rawOf(work);
+  await tenant`
+    UPDATE ctx.messages SET text = ${state.text}, raw = ${raw} WHERE id = ${messageId}
+  `;
+};
+
+/** Ход без ответа: пустая запись в ленте не нужна — убираем её. */
+const dropTurn = async (companyId: string, messageId: string): Promise<void> => {
+  const tenant = await platformSql(companyId);
+  if (tenant === undefined) return;
+  await tenant`DELETE FROM ctx.messages WHERE id = ${messageId}`;
+};
+
+/**
+ * Спросить агента и провести ответ в чат. Ответ копится и в памяти, и в записи: память
+ * нужна комнате, запись — ленте. Куски уходят в комнату и в запись вместе.
  */
 export const askAgent = async (companyId: string, conversationId: string, question: string): Promise<Answer> => {
-  if (config.agentUrl === '') return { text: '', work: emptyWork() };
+  const empty: Answer = { text: '', messageId: undefined, startedAt: Date.now(), state: emptyState() };
+  if (config.agentUrl === '') return empty;
   // Название придумывается рядом с ходом и уходит в комнату само: человек видит
   // вопрос, а список чатов тем временем получает имя. Ход названия не ждёт.
   void nameChat(companyId, conversationId, question);
@@ -148,26 +221,35 @@ export const askAgent = async (companyId: string, conversationId: string, questi
   const url = `${config.agentUrl}/room/${key}?token=${encodeURIComponent(config.agentSecret)}`;
   const socket = new WebSocket(url);
   const startedAt = Date.now();
+  const messageId = newId('message');
   const waiter = Promise.withResolvers<Answer>();
 
-  // Списки хода: куски текста, кадры имён (каждый заменяет прошлый) и число мыслей.
-  // Копилки — реестры кадров, как реестр соединений в комнатах: значение, не счётчик.
+  // Списки хода: куски текста, кадры вызовов и мыслей (кадр заменяет прошлый)
+  // и число записей. Копилки — реестры кадров, как реестр соединений в комнатах.
   const parts: string[] = [];
-  const nameLists: (readonly string[])[] = [];
+  const callLists: (readonly ToolCall[])[] = [];
+  const thinkings: boolean[] = [];
   const thoughts: number[] = [];
+  const written: number[] = [];
+  const writes: Promise<void>[] = [];
+
+  const stateOf = (): TurnState => ({
+    text: parts.join(''),
+    calls: lastOf(callLists, []),
+    thinking: lastFlag(thinkings, false),
+    thoughts: thoughts.length,
+  });
+
+  /** Запись догоняет ход. Ответы записи держим: конец хода ложится последним. */
+  const tell = (ended: boolean): void => {
+    writes.push(writeTurn(companyId, messageId, startedAt, stateOf(), ended));
+  };
 
   /** Ход закончен: закрываем соединение и отдаём ответ наружу. */
   const settle = (final: string): void => {
     socket.close();
-    waiter.resolve({
-      text: final,
-      work: {
-        // Работа была, раз ответ пришёл: показываем хотя бы секунду, а не «0s».
-        seconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
-        names: lastOf(nameLists, []),
-        thoughts: thoughts.length,
-      },
-    });
+    // Закрытые соединения больше не пишут: очередь обрывается на том, что успело лечь.
+    waiter.resolve({ text: final, messageId, startedAt, state: { ...stateOf(), text: final } });
   };
 
   // Срок общий на ответ: сработает один раз, а повторное закрытие соединения безвредно.
@@ -175,7 +257,8 @@ export const askAgent = async (companyId: string, conversationId: string, questi
   socket.addEventListener('close', () => globalThis.clearTimeout(deadline));
 
   socket.addEventListener('open', () => {
-    say(room, { kind: 'started', conversationId });
+    writes.push(openTurn(companyId, conversationId, messageId));
+    say(room, { kind: 'started', conversationId, messageId });
     socket.send(JSON.stringify({ kind: 'ask', text: question }));
   });
 
@@ -184,18 +267,23 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     if (frame === undefined) return;
     if (frame.kind === 'chunk') {
       parts.push(frame.text);
+      written.push(1);
+      if (written.length % WRITE_EVERY_CHUNKS === 0) tell(false);
       say(room, { kind: 'chunk', conversationId, text: frame.text });
       return;
     }
     // Ход работы идёт в комнату как есть: страница собирает из него строку.
     if (frame.kind === 'live') {
       // Список приходит целиком и заменяет прошлый: берём последний кадр.
-      nameLists.push(frame.calls.map((call) => call.name));
+      callLists.push(frame.calls);
+      thinkings.push(frame.thinking);
+      tell(false);
       say(room, { kind: 'live', conversationId, calls: frame.calls, thinking: frame.thinking });
       return;
     }
     if (frame.kind === 'thought') {
       thoughts.push(1);
+      tell(false);
       say(room, { kind: 'thought', conversationId });
       return;
     }
@@ -214,7 +302,10 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     settle('');
   });
 
-  return waiter.promise;
+  const answer = await waiter.promise;
+  // Конец хода ложится последним: сперва то, что уже в пути, потом итог.
+  await Promise.allSettled(writes);
+  return answer;
 };
 
 /**
@@ -249,11 +340,18 @@ const nameChat = async (companyId: string, conversationId: string, question: str
 };
 
 /** Пустой ход: агент не отвечал — и работы не было. */
-const emptyWork = (): TurnWork => ({ seconds: 0, names: [], thoughts: 0 });
+const emptyState = (): TurnState => ({ text: '', calls: [], thinking: false, thoughts: 0 });
 
-/** Последний кадр списка. Кадров не было — пустой список. */
-const lastOf = (lists: readonly (readonly string[])[], fallback: readonly string[]): readonly string[] => {
+/** Последний кадр списка. Кадров не было — берём запасное значение. */
+const lastOf = <T>(lists: readonly (readonly T[])[], fallback: readonly T[]): readonly T[] => {
   const last = lists.at(-1);
+  if (last === undefined) return fallback;
+  return last;
+};
+
+/** Последний кадр-признак. Кадров не было — берём запасное значение. */
+const lastFlag = (flags: readonly boolean[], fallback: boolean): boolean => {
+  const last = flags.at(-1);
   if (last === undefined) return fallback;
   return last;
 };
@@ -292,39 +390,32 @@ const turnOf = async (companyId: string, conversationId: string, question: strin
   const room = conversationRoom(conversationId);
   try {
     const answer = await askAgent(companyId, conversationId, question);
-    if (answer.text === '') {
+    if (answer.messageId === undefined) {
       say(room, { kind: 'failed', conversationId, reason: 'агент не ответил' });
       return;
     }
-    const messageId = await storeAnswer(companyId, conversationId, answer);
-    log.info('ответ агента записан', { companyId, conversationId, length: answer.text.length });
-    // Номер записи уходит странице: по нему её собранная реплика уступает записанной.
-    if (messageId === undefined) {
-      say(room, { kind: 'done', conversationId });
+    if (answer.text === '') {
+      // Пустая запись в ленте не нужна: ход не состоялся.
+      await dropTurn(companyId, answer.messageId);
+      say(room, { kind: 'failed', conversationId, reason: 'агент не ответил' });
       return;
     }
-    say(room, { kind: 'done', conversationId, messageId });
+    await writeTurn(companyId, answer.messageId, answer.startedAt, answer.state, true);
+    await touchConversation(companyId, conversationId);
+    log.info('ответ агента записан', { companyId, conversationId, length: answer.text.length });
+    // Номер записи уходит странице: по нему её собранная реплика уступает записанной.
+    say(room, { kind: 'done', conversationId, messageId: answer.messageId });
   } catch (error) {
     log.error('ход не удался', { companyId, conversationId, error: String(error) });
     say(room, { kind: 'failed', conversationId, reason: 'агент недоступен' });
   }
 };
 
-/**
- * Ответ агента ложится в ту же чат. Ход работы едет в сыром поле записи: страница
- * берёт строку оттуда, поэтому она приходит вместе с лентой и не мигает.
- */
-const storeAnswer = async (companyId: string, conversationId: string, answer: Answer): Promise<string | undefined> => {
+/** Список чатов замечает ход по времени последней записи. */
+const touchConversation = async (companyId: string, conversationId: string): Promise<void> => {
   const tenant = await platformSql(companyId);
   if (tenant === undefined) return;
-  const messageId = newId('message');
-  const raw = JSON.stringify({ work: answer.work });
-  await tenant`
-    INSERT INTO ctx.messages (id, conversation_id, role, author_name, text, raw)
-    VALUES (${messageId}, ${conversationId}, ${'assistant'}, ${'агент'}, ${answer.text}, ${raw}::jsonb)
-  `;
   await tenant`
     UPDATE ctx.conversations SET last_message_at = now() WHERE id = ${conversationId}
   `;
-  return messageId;
 };

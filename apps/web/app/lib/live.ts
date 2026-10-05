@@ -23,7 +23,10 @@ const eventOf = (raw: string): ClientEvent | undefined => {
  * дальше как есть — по нему лента вытесняет собранную реплику.
  */
 const READERS: Readonly<Record<string, (frame: Record<string, unknown>, room: string) => ClientEvent | undefined>> = {
-  started: (_frame, room) => ({ kind: 'started', conversationId: room }),
+  started: (frame, room) => {
+    if (typeof frame.messageId !== 'string') return { kind: 'started', conversationId: room };
+    return { kind: 'started', conversationId: room, messageId: frame.messageId };
+  },
   thought: (_frame, room) => ({ kind: 'thought', conversationId: room }),
   chunk: (frame, room) => {
     if (typeof frame.text !== 'string') return;

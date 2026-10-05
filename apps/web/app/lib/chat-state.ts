@@ -2,10 +2,10 @@
  * Состояние чата из журнала событий. Лента и ход работы выводятся из журнала
  * одним проходом: `fold` получает записи и отдаёт готовое состояние.
  *
- * Переигрывание — единственный способ собрать состояние. Страница не хранит
- * разметку сама, поэтому восстановленный чат не отличается от свежего: тот же
- * проход, те же события. Исключение одно — пришедшие с сервера реплики: их в
- * журнале нет, они уже готовы и кладутся в начало.
+ * Журнал живёт в памяти страницы и нигде не хранится: правда одна, она в базе.
+ * Перезагрузка журнал теряет — и это не потеря: лента приходит из базы целиком,
+ * а ход, который идёт сейчас, читается оттуда же (запись хода заводится с его
+ * началом). Поэтому здесь нет ни сверки по времени, ни второго счёта.
  */
 import type { ChatBlock, ChatEvent, ChatMessage, LogEntry, StoredWork, ToolCall } from '@workspace/types';
 import { LIVE_ID, workOfRaw } from '@workspace/types';
@@ -31,13 +31,22 @@ export type Work = {
  * ответа, начало — на столько же раньше. Тогда строка показывает то же, что видела
  * страница во время хода.
  */
-export const workOfStored = (stored: StoredWork, at: string): Work => ({
-  calls: stored.names.map((name) => ({ name, intent: name })),
-  thinking: false,
-  thoughts: stored.thoughts,
-  startedAt: new Date(Date.parse(at) - stored.seconds * 1000).toISOString(),
-  endedAt: at,
-});
+export const workOfStored = (stored: StoredWork, at: string): Work => {
+  const calls = callsOfWork(stored);
+  // Ход ещё идёт: запись заведена в начале хода и конца у неё нет. Часы идут от
+  // времени записи, строка показывает то же, что видел человек до перезагрузки.
+  if (stored.thinking === true) {
+    return { calls, thinking: true, thoughts: stored.thoughts, startedAt: at, endedAt: null };
+  }
+  return {
+    calls,
+    thinking: false,
+    thoughts: stored.thoughts,
+    // Часы строим от записанной длительности: конец — время ответа, начало — раньше.
+    startedAt: new Date(Date.parse(at) - stored.seconds * 1000).toISOString(),
+    endedAt: at,
+  };
+};
 
 /** Состояние чата. Всё выводится из журнала, ничего не хранится отдельно. */
 export type ChatState = {
@@ -46,9 +55,11 @@ export type ChatState = {
   /** Сколько ходов агента началось: номер реплики берётся отсюда. */
   readonly turns: number;
   readonly problem: string;
+  /** Номер реплики, которая собирается сейчас. Она же — номер её записи в базе. */
+  readonly liveId: string | null;
 };
 
-export const emptyState = (): ChatState => ({ messages: [], work: null, turns: 0, problem: '' });
+export const emptyState = (): ChatState => ({ messages: [], work: null, turns: 0, problem: '', liveId: null });
 
 /** Запись ленты с сервера. Сырое поле несёт ход работы ответа. */
 export type StoredRow = {
@@ -85,9 +96,27 @@ const blocksOf = (text: string): readonly ChatBlock[] => {
   return [{ type: 'text', text }];
 };
 
-/** Реплика, которая собирается сейчас: номер хода делает её адрес постоянным. */
-const liveMessage = (turns: number, at: string): ChatMessage => ({
-  id: `${LIVE_ID}-${turns}`,
+/** Вызовы хода: полный список записи, а у старых записей — одни имена. */
+const callsOfWork = (stored: StoredWork): readonly ToolCall[] => {
+  if (stored.calls !== undefined) return stored.calls;
+  return stored.names.map((name) => ({ name, intent: name }));
+};
+
+/**
+ * Номер собираемой реплики. Номер записи известен с первого кадра, поэтому он и есть
+ * её номер; пока номера нет, реплика держится за номер хода.
+ */
+const liveIdOf = (turns: number, id: string | null | undefined): string => {
+  if (typeof id === 'string') return id;
+  return `${LIVE_ID}-${turns}`;
+};
+
+/**
+ * Реплика, которая собирается сейчас. Номер её записи известен с первого кадра, поэтому
+ * она сразу носит номер базы; без него держим свой — по номеру хода.
+ */
+const liveMessage = (turns: number, at: string, id: string | null | undefined): ChatMessage => ({
+  id: liveIdOf(turns, id),
   role: 'assistant',
   text: '',
   at,
@@ -105,9 +134,10 @@ const startedWork = (at: string): Work => ({
 
 /** Последняя реплика — та, что собирается. Её и правит событие ответа. */
 const withLive = (state: ChatState, at: string, edit: (message: ChatMessage) => ChatMessage): ChatState => {
+  const id = liveIdOf(state.turns, state.liveId);
   const last = state.messages.at(-1);
-  if (last === undefined || last.id !== `${LIVE_ID}-${state.turns}`) {
-    return { ...state, messages: [...state.messages, edit(liveMessage(state.turns, at))] };
+  if (last === undefined || last.id !== id) {
+    return { ...state, messages: [...state.messages, edit(liveMessage(state.turns, at, state.liveId))] };
   }
   return { ...state, messages: [...state.messages.slice(0, -1), edit(last)] };
 };
@@ -127,11 +157,15 @@ const withText = (message: ChatMessage, text: string): ChatMessage => {
 
 /** Собранная реплика получает номер своей записи: так её опознаёт пришедшая лента. */
 const withStoredId = (state: ChatState, messageId: string | undefined): ChatState => {
-  if (messageId === undefined) return state;
-  const last = state.messages.at(-1);
-  if (last === undefined) return state;
-  if (last.id.slice(0, LIVE_ID.length) !== LIVE_ID) return state;
-  return { ...state, messages: [...state.messages.slice(0, -1), { ...last, id: messageId }] };
+  if (messageId === undefined || state.liveId === null) return state;
+  return {
+    ...state,
+    messages: state.messages.map((message) => {
+      if (message.id !== state.liveId) return message;
+      return { ...message, id: messageId };
+    }),
+    liveId: messageId,
+  };
 };
 
 /** Ход закончился: часы остановлены. Идущего хода нет — и останавливать нечего. */
@@ -153,6 +187,7 @@ const step = (state: ChatState, entry: LogEntry): ChatState => {
       ],
       work: null,
       problem: '',
+      liveId: null,
     };
   }
   if (event.kind === 'asked') {
@@ -165,14 +200,16 @@ const step = (state: ChatState, entry: LogEntry): ChatState => {
   }
   if (event.kind === 'started') {
     // Реплика агента заводится сразу с началом хода: строка работы стоит на ней,
-    // а не на вопросе человека. Куски наполняют её же.
+    // а не на вопросе человека. Номер записи приходит этим же кадром, поэтому
+    // страница и база говорят об одном ходе с первой секунды.
     const turns = state.turns + 1;
     return {
       ...state,
-      messages: [...state.messages, liveMessage(turns, entry.at)],
+      messages: [...state.messages, liveMessage(turns, entry.at, event.messageId)],
       work: startedWork(entry.at),
       problem: '',
       turns,
+      liveId: liveIdOf(turns, event.messageId),
     };
   }
   if (event.kind === 'live') {
@@ -201,73 +238,19 @@ const step = (state: ChatState, entry: LogEntry): ChatState => {
 export const fold = (entries: readonly LogEntry[]): ChatState =>
   entries.reduce<ChatState>((state, entry) => step(state, entry), emptyState());
 
-/** Момент записи, если время читается. Нечитаемое — «не знаем», тогда реплика остаётся. */
-const momentOf = (at: string): number | undefined => {
-  const parsed = Date.parse(at);
-  if (Number.isNaN(parsed)) return;
-  return parsed;
-};
-
-/** Реплика, собранная из кусков, помнит время своего начала. Готовая — нет. */
-const startOfLive = (message: ChatMessage): number | undefined => {
-  if (message.id.slice(0, LIVE_ID.length) !== LIVE_ID) return;
-  return momentOf(message.at);
-};
-
-/** Самый поздний записанный ответ: ход, начавшийся раньше него, сервер уже записал. */
-const lastAnswerAt = (stored: readonly ChatMessage[]): number | undefined => {
-  const moments = stored
-    .filter((message) => message.role === 'assistant')
-    .map((message) => momentOf(message.at))
-    .filter((moment) => moment !== undefined);
-  if (moments.length === 0) return;
-  return Math.max(...moments);
-};
-
-/**
- * Реплики журнала, которые сервер уже записал, а связка по номеру записи не дошла:
- * страница закрылась посреди хода или ход шёл в другом чате. Номера тогда у реплик
- * временные, и по номеру их с записью не свести — сводим по времени: ход, начавшийся
- * раньше последнего записанного ответа, в ленте уже есть. Без этой сверки старый ход
- * показывался бы в конце ленты второй раз. Вопрос уходит вместе со своим ответом.
- */
-const supersededIds = (messages: readonly ChatMessage[], lastAt: number | undefined): readonly string[] => {
-  if (lastAt === undefined) return [];
-  return messages.flatMap((message, index) => {
-    const here = startOfLive(message);
-    if (here !== undefined) {
-      if (here > lastAt) return [];
-      return [message.id];
-    }
-    const next = messages[index + 1];
-    if (next === undefined) return [];
-    const start = startOfLive(next);
-    if (start === undefined) return [];
-    if (start > lastAt) return [];
-    return [message.id, next.id];
-  });
-};
-
 /**
  * Свежая лента: переигрывание журнала поверх готовых реплик с сервера.
  *
  * Реплика из журнала и запись на сервере — одна и та же реплика: первая уступает
- * второй, иначе она показалась бы дважды. Уступает двумя способами: по номеру
- * записи, когда связка дошла (`asked` и `ended` несут номер), и по времени, когда
- * не дошла. Счёт по порядку не годится: журнал не всегда помнит всю ленту, и
- * счёт сбивается — тогда свежий вопрос пропадал бы с экрана.
+ * второй по номеру записи. Номер приходит первым кадром хода, поэтому две копии
+ * сходятся по имени, а сверка по времени не нужна: журнал живёт до перезагрузки,
+ * и ленты, которой страница не видела, в нём быть не может.
  */
 export const stateOf = (messages: readonly StoredRow[], entries: readonly LogEntry[]): ChatState => {
   const replayed = fold(entries);
   const stored = settledOf(messages);
   const storedIds = new Set(stored.map((message) => message.id.slice('db-'.length)));
-  const superseded = new Set(supersededIds(replayed.messages, lastAnswerAt(stored)));
-  const gathered = replayed.messages.flatMap((message) => {
-    const id = message.id;
-    if (storedIds.has(id)) return [];
-    if (superseded.has(id)) return [];
-    return [message];
-  });
+  const gathered = replayed.messages.filter((message) => !storedIds.has(message.id));
   return { ...replayed, messages: [...stored, ...gathered] };
 };
 
