@@ -201,22 +201,71 @@ const step = (state: ChatState, entry: LogEntry): ChatState => {
 export const fold = (entries: readonly LogEntry[]): ChatState =>
   entries.reduce<ChatState>((state, entry) => step(state, entry), emptyState());
 
+/** Момент записи, если время читается. Нечитаемое — «не знаем», тогда реплика остаётся. */
+const momentOf = (at: string): number | undefined => {
+  const parsed = Date.parse(at);
+  if (Number.isNaN(parsed)) return;
+  return parsed;
+};
+
+/** Реплика, собранная из кусков, помнит время своего начала. Готовая — нет. */
+const startOfLive = (message: ChatMessage): number | undefined => {
+  if (message.id.slice(0, LIVE_ID.length) !== LIVE_ID) return;
+  return momentOf(message.at);
+};
+
+/** Самый поздний записанный ответ: ход, начавшийся раньше него, сервер уже записал. */
+const lastAnswerAt = (stored: readonly ChatMessage[]): number | undefined => {
+  const moments = stored
+    .filter((message) => message.role === 'assistant')
+    .map((message) => momentOf(message.at))
+    .filter((moment) => moment !== undefined);
+  if (moments.length === 0) return;
+  return Math.max(...moments);
+};
+
+/**
+ * Реплики журнала, которые сервер уже записал, а связка по номеру записи не дошла:
+ * страница закрылась посреди хода или ход шёл в другом чате. Номера тогда у реплик
+ * временные, и по номеру их с записью не свести — сводим по времени: ход, начавшийся
+ * раньше последнего записанного ответа, в ленте уже есть. Без этой сверки старый ход
+ * показывался бы в конце ленты второй раз. Вопрос уходит вместе со своим ответом.
+ */
+const supersededIds = (messages: readonly ChatMessage[], lastAt: number | undefined): readonly string[] => {
+  if (lastAt === undefined) return [];
+  return messages.flatMap((message, index) => {
+    const here = startOfLive(message);
+    if (here !== undefined) {
+      if (here > lastAt) return [];
+      return [message.id];
+    }
+    const next = messages[index + 1];
+    if (next === undefined) return [];
+    const start = startOfLive(next);
+    if (start === undefined) return [];
+    if (start > lastAt) return [];
+    return [message.id, next.id];
+  });
+};
+
 /**
  * Свежая лента: переигрывание журнала поверх готовых реплик с сервера.
  *
  * Реплика из журнала и запись на сервере — одна и та же реплика: первая уступает
- * второй, иначе она показалась бы дважды. Опознаём их по номерам строк: вопрос
- * человека и ответ агента несут номер своей записи, и по нему видно, кто кого
- * заменяет. Счёт по порядку не годится: журнал не всегда помнит всю ленту, и
+ * второй, иначе она показалась бы дважды. Уступает двумя способами: по номеру
+ * записи, когда связка дошла (`asked` и `ended` несут номер), и по времени, когда
+ * не дошла. Счёт по порядку не годится: журнал не всегда помнит всю ленту, и
  * счёт сбивается — тогда свежий вопрос пропадал бы с экрана.
  */
 export const stateOf = (messages: readonly StoredRow[], entries: readonly LogEntry[]): ChatState => {
   const replayed = fold(entries);
   const stored = settledOf(messages);
   const storedIds = new Set(stored.map((message) => message.id.slice('db-'.length)));
+  const superseded = new Set(supersededIds(replayed.messages, lastAnswerAt(stored)));
   const gathered = replayed.messages.flatMap((message) => {
     const id = message.id;
     if (storedIds.has(id)) return [];
+    if (superseded.has(id)) return [];
     return [message];
   });
   return { ...replayed, messages: [...stored, ...gathered] };

@@ -129,6 +129,41 @@ describe('сведение журнала', () => {
     expect(assistant.map((message) => message.text)).toEqual(['Привет! Чем помочь?']);
   });
 
+  test('ход без связки по номеру не показывается в конце второй раз', () => {
+    // Страница закрылась посреди хода: связка с записью не дошла, номера у реплик
+    // журнала временные. Ход уже в базе — в ленте он должен стоять один раз и на месте.
+    const stored = [
+      { id: 'db1', role: 'user', text: 'вопрос', sent_at: at(0) },
+      { id: 'db2', role: 'assistant', text: 'ответ', sent_at: at(3) },
+      { id: 'db3', role: 'user', text: 'следующий', sent_at: at(9) },
+    ];
+    const state = stateOf(stored, log([ask('m1', 'вопрос'), { kind: 'started' }, { kind: 'chunk', text: 'ответ' }]));
+    expect(state.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      'user:вопрос',
+      'assistant:ответ',
+      'user:следующий',
+    ]);
+  });
+
+  test('идущий ход остаётся: его ответа в базе ещё нет', () => {
+    const stored = [
+      { id: 'db1', role: 'user', text: 'первый', sent_at: at(0) },
+      { id: 'db2', role: 'assistant', text: 'первый ответ', sent_at: at(2) },
+    ];
+    const entries: readonly LogEntry[] = [
+      { at: at(10), event: ask('m2', 'второй') },
+      { at: at(11), event: { kind: 'started' } },
+      { at: at(12), event: { kind: 'chunk', text: 'сейчас отвечу' } },
+    ];
+    const state = stateOf(stored, entries);
+    expect(state.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      'user:первый',
+      'assistant:первый ответ',
+      'user:второй',
+      'assistant:сейчас отвечу',
+    ]);
+  });
+
   test('ход работы записи читается из сырого поля', () => {
     const state = stateOf(
       [
