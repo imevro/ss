@@ -18,3 +18,7 @@ grep -o 'oauth_token = "[^"]*"' ~/Library/Preferences/.wrangler/config/default.t
 
 Для боя так нельзя: там ключ аккаунта — отдельный ключ из кабинета Cloudflare (My Profile → API Tokens)
 с нужными правами, а не наш вход в `wrangler`.
+
+**Сделано 2026-10-05:** такой ключ заведён (права `Account → Workers Scripts → Edit`, `Account → D1 →
+Edit`) и стоит в `.env` прокси как `CLOUDFLARE_API_TOKEN`; копия — `~/.ss-secrets/cloudflare-account-token.env`.
+Пляска с `wrangler whoami` нужна теперь только для проверок на стенде.

@@ -176,7 +176,7 @@ export const ChatComposer = ({
   };
 
   return (
-    <div className="mb-1">
+    <div className="mb-4">
       <PromptInput onSubmit={send}>
         <PromptInputTextarea
           value={draft}
