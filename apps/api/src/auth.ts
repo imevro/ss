@@ -1,7 +1,11 @@
 /**
  * Вход. better-auth на drizzle; apple включается, когда заданы оба ключа.
+ * Ключи компаний ведёт плагин api-key: ключ принадлежит человеку, а компания
+ * лежит в метаданных ключа — владелец не подделывается клиентом.
  */
-import { account, db, newId, session, user, verification } from '@workspace/db';
+import { apiKey } from '@better-auth/api-key';
+import type { IdKind } from '@workspace/db';
+import { account, apiKeys, db, newId, session, user, verification } from '@workspace/db';
 import { createLogger } from '@workspace/log';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -9,6 +13,24 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { config } from './env';
 
 const log = createLogger('auth');
+
+/**
+ * Имя таблицы входа → вид нашего номера. Неизвестная таблица — отказ: иначе в
+ * базе молча появится номер с чужим началом и его не отличить в журнале.
+ */
+const MODEL_ID_KIND: Record<string, IdKind> = {
+  user: 'user',
+  session: 'session',
+  account: 'account',
+  verification: 'verification',
+  apikey: 'apiKey',
+};
+
+const idFor = (model: string): string => {
+  const kind = MODEL_ID_KIND[model];
+  if (kind === undefined) throw new Error(`нет вида номера для таблицы ${model}`);
+  return newId(kind);
+};
 
 const env = (key: string): string | undefined => {
   const value = process.env[key]?.trim();
@@ -39,12 +61,19 @@ const socialProviders = socialProvidersOf();
 if (!appleReady) log.info('apple выключен: нет ключей');
 
 export const auth = betterAuth({
-  database: drizzleAdapter(db, { provider: 'pg', schema: { user, session, account, verification } }),
+  database: drizzleAdapter(db, {
+    provider: 'pg',
+    schema: { user, session, account, verification, apikey: apiKeys },
+  }),
   secret: config.authSecret,
   baseURL: config.authUrl,
   trustedOrigins: config.webOrigins,
   emailAndPassword: { enabled: true },
   socialProviders,
-  // Свои строки — наши идентификаторы: форма одна на весь продукт.
-  advanced: { database: { generateId: () => newId('user') } },
+  // Ключи доступа к Cloudflare: строка ключа с нашим началом, метаданные с компанией.
+  // Ограничение частоты выключено: у плагина по умолчанию 10 запросов в сутки — это
+  // остановило бы кланкера на второй минуте работы.
+  plugins: [apiKey({ enableMetadata: true, defaultPrefix: 'ss_cf_', rateLimit: { enabled: false } })],
+  // Свои строки — наши идентификаторы: форма одна на весь продукт, вид — по таблице.
+  advanced: { database: { generateId: ({ model }) => idFor(model) } },
 });

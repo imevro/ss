@@ -2,7 +2,7 @@
  * Таблицы входа. Поля и индексы сверены с better-auth 1.7.7: колонку issuer
  * версия не пишет, поэтому её тут нет.
  */
-import { boolean, index, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -64,4 +64,42 @@ export const verification = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('verification_identifier_idx').on(t.identifier)],
+);
+
+/**
+ * Ключи доступа к платформе Cloudflare. Таблица плагина `api-key`; поля сверены с
+ * выводом `npx auth generate` для better-auth 1.7.7. Ключ принадлежит человеку
+ * (`reference_id`), компания лежит в `metadata` — её пишем только мы.
+ */
+export const apiKeys = pgTable(
+  'apikey',
+  {
+    id: text('id').primaryKey(),
+    configId: text('config_id').notNull().default('default'),
+    name: text('name'),
+    start: text('start'),
+    referenceId: text('reference_id').notNull(),
+    prefix: text('prefix'),
+    key: text('key').notNull(),
+    refillInterval: integer('refill_interval'),
+    refillAmount: integer('refill_amount'),
+    lastRefillAt: timestamp('last_refill_at', { withTimezone: true }),
+    enabled: boolean('enabled').default(true),
+    rateLimitEnabled: boolean('rate_limit_enabled').default(true),
+    rateLimitTimeWindow: integer('rate_limit_time_window').default(86_400_000),
+    rateLimitMax: integer('rate_limit_max').default(10),
+    requestCount: integer('request_count').default(0),
+    remaining: integer('remaining'),
+    lastRequest: timestamp('last_request', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    permissions: text('permissions'),
+    metadata: text('metadata'),
+  },
+  (t) => [
+    index('apikey_config_idx').on(t.configId),
+    index('apikey_reference_idx').on(t.referenceId),
+    index('apikey_hash_idx').on(t.key),
+  ],
 );

@@ -148,3 +148,37 @@ export const jobEventBodySchema = z.object({
 
 export const jobSchema = z.object({ jobId: z.string().meta({ description: 'Номер задачи в очереди.' }) });
 export const okSchema = z.object({ ok: z.boolean() });
+
+/**
+ * Область платформы Cloudflare, которую видит кланкер. Список закрыт и расширяется
+ * одной строкой; отказ перечисляет его целиком, поэтому кланкер не гадает.
+ */
+export const areaSchema = z
+  .enum(['workers', 'durable_objects', 'd1'])
+  .meta({ description: 'Область платформы: код бота, хранилище сообщений, база.' });
+
+/** Заказ ключа доступа к платформе. */
+export const keyBodySchema = z.object({
+  name: z.string().min(1).meta({ description: 'Имя ключа для человека.' }),
+  days: z.number().int().min(1).max(365).optional().meta({ description: 'Срок жизни, дней. По умолчанию 365.' }),
+  areas: z.array(areaSchema).min(1).optional().meta({ description: 'Области платформы. По умолчанию все три.' }),
+});
+
+/** Ключ в списке: строки ключа в нём нет и не будет. */
+export const keySchema = z.object({
+  id: z.string().meta({ description: 'Номер ключа.' }),
+  name: z.string().nullable().meta({ description: 'Имя ключа.' }),
+  start: z.string().nullable().meta({ description: 'Начало строки ключа: по нему ключ узнаётся в списке.' }),
+  areas: z.array(areaSchema).meta({ description: 'Области платформы.' }),
+  enabled: z.boolean(),
+  createdAt: z.string().meta({ description: 'Когда выдан, ISO.' }),
+  lastRequest: z.string().nullable().meta({ description: 'Последнее обращение, ISO.' }),
+});
+
+/** Выданный ключ: строка приходит один раз, при выдаче. */
+export const issuedKeySchema = z.object({
+  id: z.string(),
+  key: z.string().meta({ description: 'Строка ключа. Показывается один раз, при выдаче.' }),
+  name: z.string(),
+  areas: z.array(areaSchema),
+});

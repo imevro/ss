@@ -21,6 +21,7 @@ export type IdKind =
   | 'session'
   | 'account'
   | 'verification'
+  | 'apiKey'
   | 'conversation'
   | 'message'
   | 'request'
@@ -39,6 +40,7 @@ const PREFIX: Record<IdKind, string> = {
   session: 'sess',
   account: 'acct',
   verification: 'verif',
+  apiKey: 'key',
   conversation: 'chat',
   message: 'msg',
   request: 'req',

@@ -8,6 +8,7 @@ import { describeRoute, openAPIRouteHandler } from 'hono-openapi';
 import { z } from 'zod';
 
 import { auth } from './auth';
+import { cloudflareRoutes } from './cloudflare';
 import { okSchema, userSchema } from './contracts';
 import { conversations } from './conversations';
 import { docsPage, documentOf, jsonResponse, unauthorized } from './docs';
@@ -57,6 +58,7 @@ app.get(
 
 app.route('/', onboarding);
 app.route('/', conversations);
+app.route('/', cloudflareRoutes);
 app.route('/', liveRoutes);
 
 // Документ собирается из описаний у маршрутов, поэтому эти два пути стоят последними:

@@ -51,6 +51,12 @@ export const config = {
   llmModel: required('LLM_MODEL'),
   /** Пароль между API и воркером: воркер рассказывает о работе, чужой запрос отбивается. */
   workerToken: optional('WORKER_TOKEN', ''),
+  /**
+   * Ключ аккаунта Cloudflare и его номер. Ключ наружу не уходит: его подставляет
+   * прокси. Пусто — доступ к платформе не настроен, и прокси отвечает отказом.
+   */
+  cloudflareToken: optional('CLOUDFLARE_API_TOKEN', ''),
+  cloudflareAccount: optional('CLOUDFLARE_ACCOUNT_ID', ''),
   /** Адрес агента и общий с ним пароль. Пусто — чат с агентом не отвечает. */
   agentUrl: agentUrlOf(optional('AGENT_URL', '')),
   agentSecret: optional('AGENT_SECRET', ''),

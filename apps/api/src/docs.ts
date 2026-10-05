@@ -77,7 +77,11 @@ export const documentOf = (): Partial<GenerateSpecOptions> => ({
     tags: [
       { name: 'onboarding', description: 'Четыре вопроса и предложение таблиц.' },
       { name: 'companies', description: 'Компания, её база и её миниаппы.' },
-      { name: 'conversations', description: 'Чаты: телеграм и агент в одном месте.' },
+      { name: 'conversations', description: 'Чаты с агентом: список, лента, живые кадры.' },
+      {
+        name: 'cloudflare',
+        description: 'Доступ кланкера к платформе Cloudflare: ключи компаний и прокси с границей.',
+      },
       { name: 'live', description: 'Живой поток: комнаты и задания от воркера.' },
       { name: 'service', description: 'Служебное.' },
     ],
