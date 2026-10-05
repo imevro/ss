@@ -17,7 +17,6 @@
     "better-auth": "^1.7.7",
     "bunqueue": "^2.9.6",
     "drizzle-orm": "^0.45.3",
-    "grammy": "^1.46.0",
     "hono": "^4.13.12",
     "hono-openapi": "^1.3.3",
     "xsai": "^0.5.1",

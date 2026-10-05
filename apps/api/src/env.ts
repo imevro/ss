@@ -49,10 +49,6 @@ export const config = {
   llmBaseUrl: required('LLM_BASE_URL'),
   llmApiKey: required('LLM_API_KEY'),
   llmModel: required('LLM_MODEL'),
-  telegramToken: optional('TELEGRAM_BOT_TOKEN', ''),
-  telegramSecret: optional('TELEGRAM_WEBHOOK_SECRET', ''),
-  telegramUsername: optional('TELEGRAM_BOT_USERNAME', ''),
-  publicUrl: optional('PUBLIC_URL', ''),
   /** Пароль между API и воркером: воркер рассказывает о работе, чужой запрос отбивается. */
   workerToken: optional('WORKER_TOKEN', ''),
   /** Адрес агента и общий с ним пароль. Пусто — чат с агентом не отвечает. */

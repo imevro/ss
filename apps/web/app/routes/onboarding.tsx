@@ -15,7 +15,6 @@ import {
   QuestionsSubmit,
   QuestionsTitle,
 } from '@workspace/ui/components/nexus-ui/questions';
-import { Separator } from '@workspace/ui/components/separator';
 import { useCallback, useState } from 'react';
 import { redirect } from 'react-router';
 
@@ -129,7 +128,6 @@ export default function Onboarding({ loaderData }: Route.ComponentProps) {
   const [answers, setAnswers] = useState<Answers>(saved.answers);
   const [proposal, setProposal] = useState<Proposal | null>(saved.proposal);
   const [company, setCompany] = useState<Company | null>(null);
-  const [invitationLink, setInvitationLink] = useState<string | null>(null);
   const [problem, setProblem] = useState('');
   const [waiting, setWaiting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -225,8 +223,6 @@ export default function Onboarding({ loaderData }: Route.ComponentProps) {
       });
       setCompany(created.company);
       await api(`/v1/companies/${created.company.id}/database`, { method: 'POST' });
-      const invitation = await api<{ link: string | null }>(`/v1/companies/${created.company.id}/invitation`);
-      setInvitationLink(invitation.link);
     } catch (error) {
       setProblem(reasonOf(error));
     }
@@ -280,16 +276,7 @@ export default function Onboarding({ loaderData }: Route.ComponentProps) {
 
       {company !== null && (
         <section className="flex shrink-0 flex-col gap-4 border-border border-t px-6 py-4">
-          <p>
-            Компания «{company.name}» заведена, база выписывается. Добавьте бота в рабочий чат — он будет присылать
-            переписку в панель.
-          </p>
-          {invitationLink !== null && (
-            <a className="underline underline-offset-4" href={invitationLink} target="_blank" rel="noreferrer">
-              Добавить бота в рабочий чат
-            </a>
-          )}
-          <Separator />
+          <p>Компания «{company.name}» заведена, база выписывается.</p>
           <div>
             <Button variant="outline" onClick={() => globalThis.location.assign(`/c/${company.id}`)}>
               К чатам

@@ -82,7 +82,7 @@ export const companySchema = z.object({
 
 export const conversationSchema = z.object({
   id: z.string(),
-  source: z.enum(['telegram', 'agent']).meta({ description: 'Откуда чат.' }),
+  source: z.literal('agent').meta({ description: 'Откуда чат.' }),
   title: z.string(),
   last_message_at: z.string().meta({ description: 'Время последнего сообщения, ISO.' }),
   messages: z.number().optional().meta({ description: 'Сколько сообщений; только в списке чатов.' }),
@@ -148,6 +148,3 @@ export const jobEventBodySchema = z.object({
 
 export const jobSchema = z.object({ jobId: z.string().meta({ description: 'Номер задачи в очереди.' }) });
 export const okSchema = z.object({ ok: z.boolean() });
-export const linkSchema = z.object({
-  link: z.string().nullable().meta({ description: 'Ссылка `t.me` … Пусто, если имя бота не задано.' }),
-});

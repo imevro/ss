@@ -18,14 +18,12 @@ import { companiesOf, databaseOf, findCompany } from './companies';
 import {
   companySchema,
   conversationSchema,
-  linkSchema,
   messageSchema,
   miniAppSchema,
   textBodySchema,
   writtenSchema,
 } from './contracts';
 import { badRequest, bodyOf, conflict, forbidden, jsonResponse, notFound, unauthorized } from './docs';
-import { config } from './env';
 import { problem } from './problem';
 
 const log = createLogger('conversations');
@@ -271,31 +269,6 @@ conversations.get(
       .from(apps)
       .where(eq(apps.companyId, companyId));
     return c.json({ apps: rows });
-  },
-);
-
-/** Ссылка на бота: человек открывает её, бот делает остальное. Команду не показываем. */
-conversations.get(
-  '/v1/companies/:id/invitation',
-  describeRoute({
-    tags: ['companies'],
-    summary: 'Ссылка на бота',
-    responses: {
-      200: jsonResponse('Ссылка для приглашения бота.', linkSchema),
-      401: unauthorized,
-      403: forbidden,
-      409: conflict,
-    },
-  }),
-  async (c) => {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
-    const companyId = c.req.param('id');
-    if (!(await mine(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
-    // Номер компании уходит в ссылку как /start: человек ничего не копирует и не печатает.
-    const bot = config.telegramUsername;
-    if (bot === '') return problem(c, 409, 'conflict', 'имя бота не задано');
-    return c.json({ link: `https://t.me/${bot}?start=${companyId}` });
   },
 );
 

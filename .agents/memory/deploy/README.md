@@ -6,3 +6,4 @@
 - [`gotcha-bez-faila-okruzheniya-v-glavnom-kataloge`](gotcha-bez-faila-okruzheniya-v-glavnom-kataloge.md) — без `.env` в главном каталоге служба падает.
 - [`dostup-k-repo-mic-na-borde-gentic`](dostup-k-repo-mic-na-borde-gentic.md) — что нужно борду gentic, чтобы самому ставить наборы навыков из закрытого репозитория MIC.
 - [`gotcha-migracii-otstayut-ot-shemy`](gotcha-migracii-otstayut-ot-shemy.md) — схема накатывается прямо, миграции отстают: чистка проверкой на чистой базе, починка генерацией.
+- [`gotcha-staryi-process-derzhit-port`](gotcha-staryi-process-derzhit-port.md) — порт 8787 держит вчерашний процесс: проверка отвечает старым кодом, новая копия падает с EADDRINUSE.

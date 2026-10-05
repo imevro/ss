@@ -1,5 +1,5 @@
 /**
- * Наш API. Онбординг, вход, бот телеграма, данные для панели.
+ * Наш API. Онбординг, вход, живые комнаты, данные для панели.
  * Единственный процесс, который слушает порт и держит комнаты живого потока.
  */
 import { createLogger } from '@workspace/log';
@@ -8,12 +8,10 @@ import { describeRoute, openAPIRouteHandler } from 'hono-openapi';
 import { z } from 'zod';
 
 import { auth } from './auth';
-import { startBot } from './bot';
 import { okSchema, userSchema } from './contracts';
 import { conversations } from './conversations';
 import { docsPage, documentOf, jsonResponse, unauthorized } from './docs';
 import { config, setupLogging } from './env';
-import { webhookRoutes } from './ingest';
 import { liveRoutes, websocket } from './live';
 import { onboarding } from './onboarding';
 import { problem } from './problem';
@@ -66,24 +64,6 @@ app.route('/', liveRoutes);
 app.get('/openapi', openAPIRouteHandler(app, documentOf()));
 app.get('/docs', docsPage);
 
-// Публичного адреса нет — бот берёт обновления длинным опросом. Когда адрес
-// появится, тот же бот перейдёт на вебхук, а длинный опрос выключится.
-const hasPublicUrl = config.publicUrl !== '';
-const bot = await startBot({
-  token: config.telegramToken,
-  publicUrl: config.publicUrl,
-  secret: config.telegramSecret,
-  allowLongPoll: !hasPublicUrl,
-});
-if (bot !== undefined && hasPublicUrl) app.route('/', webhookRoutes(bot, config.telegramSecret));
-
-/** Как бот получает обновления: вебхук при публичном адресе, иначе длинный опрос. */
-const botMode = (hasBot: boolean, hasUrl: boolean): string => {
-  if (!hasBot) return 'нет';
-  if (hasUrl) return 'вебхук';
-  return 'длинный опрос';
-};
-
 const server = Bun.serve({
   port: config.port,
   hostname: '0.0.0.0',
@@ -92,7 +72,4 @@ const server = Bun.serve({
   websocket,
 });
 
-log.info('слушаю', {
-  url: `http://localhost:${server.port}`,
-  bot: botMode(bot !== undefined, hasPublicUrl),
-});
+log.info('слушаю', { url: `http://localhost:${server.port}` });

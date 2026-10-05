@@ -5,4 +5,3 @@ export * from './plan';
 export * from './proposal';
 export * from './sgr';
 export * from './steps';
-export * from './telegram';

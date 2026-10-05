@@ -17,7 +17,6 @@ export type IdKind =
   | 'app'
   | 'auditLog'
   | 'flag'
-  | 'chatBinding'
   | 'user'
   | 'session'
   | 'account'
@@ -36,7 +35,6 @@ const PREFIX: Record<IdKind, string> = {
   app: 'app',
   auditLog: 'alog',
   flag: 'flag',
-  chatBinding: 'cbind',
   user: 'usr',
   session: 'sess',
   account: 'acct',

@@ -16,7 +16,6 @@
     "@workspace/types": "workspace:*",
     "bunqueue": "^2.9.6",
     "drizzle-orm": "^0.45.3",
-    "grammy": "^1.46.0",
     "postgres": "^3.4.9"
   }
 }

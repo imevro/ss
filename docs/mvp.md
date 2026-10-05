@@ -3,6 +3,9 @@
 > Цель: зайти на `ss.erodionov.com`, войти, пройти онбординг, увидеть свои беседы в нашей панели,
 > поговорить с агентом в табе, получить отчёт по проектам из своей базы и получить сгенерированный
 > канбан по адресу. Пока — на локальной машине, домен подключаем в конце.
+>
+> Снято 2026-10-05: пункт 1.3, раздел 3 про `source`, этап E2 и риск про бота в группе — история.
+> Телеграм-приём из нашего ядра вырезан; ботов заводят сами кланкеры. См. `bot-on-cloudflare.md`.
 
 ## 1. Сквозной путь
 
@@ -33,7 +36,7 @@
 
 ```
 ctx.conversations(id, source, external_id, title, agent, created_at, last_message_at)
-   source: telegram | agent
+   source: agent
 ctx.messages(id, conversation_id, role, author_name, text, sent_at, external_id, raw jsonb)
 ```
 

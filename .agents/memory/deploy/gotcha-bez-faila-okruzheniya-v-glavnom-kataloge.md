@@ -7,13 +7,11 @@
 Команды из главного каталога:
 
 ```bash
-TELEGRAM_BOT_TOKEN= bun --env-file=.env apps/api/src/index.ts   # приложение
-cd apps/web && bun run dev                                     # панель
-bun run broker                                                 # очередь, отдельным процессом
+bun --env-file=.env apps/api/src/index.ts   # приложение
+cd apps/web && bun run dev                  # панель
+bun run broker                              # очередь, отдельным процессом
 ```
 
-- Пустой `TELEGRAM_BOT_TOKEN=` впереди — это нарочно: телеграм для проверки не
-  нужен, а переменная из файла им перекрывается.
 - `.env` в git не попадает. Образец — `.env.example`; рабочий файл делает
   `scripts/iso-setup.sh`.
 - Проверка: `curl localhost:8787/health`.

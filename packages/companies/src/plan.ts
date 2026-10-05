@@ -114,7 +114,7 @@ const ctxTables = (): readonly string[] => [
      raw jsonb NOT NULL DEFAULT '{}'::jsonb
    )`,
   'CREATE INDEX IF NOT EXISTS ctx_messages_conversation_idx ON ctx.messages (conversation_id, sent_at)',
-  // Повторная доставка телеграма спотыкается об этот ключ: дублей в ленте нет.
+  // Повторная доставка спотыкается об этот ключ: дублей в ленте нет.
   'CREATE UNIQUE INDEX IF NOT EXISTS ctx_messages_external_idx ON ctx.messages (conversation_id, external_id)',
 ];
 

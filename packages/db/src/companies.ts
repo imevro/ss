@@ -152,22 +152,3 @@ export const flags = pgTable('flags', {
   key: text('key').notNull(),
   value: boolean('value').notNull().default(false),
 });
-
-/** Привязка внешнего чата к компании. Чат телеграма не знает про наши компании. */
-export const chatBindings = pgTable(
-  'chat_bindings',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => newId('chatBinding')),
-    companyId: text('company_id')
-      .notNull()
-      .references(() => companies.id, { onDelete: 'cascade' }),
-    channel: text('channel').notNull().default('telegram'),
-    chatId: text('chat_id').notNull(),
-    title: text('title'),
-    boundBy: text('bound_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [uniqueIndex('chat_bindings_channel_chat').on(t.channel, t.chatId)],
-);
