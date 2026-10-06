@@ -182,6 +182,9 @@ Cloudflare (её обещание, §11), а мы не заводим ни од�
   (`comp-<номер>-`, строчными: у Cloudflare имена только строчные). Ключ принимается и заголовком
   `x-ss-token`, и как `Authorization: Bearer` — второе нужно, чтобы работал обычный `wrangler`
   (`CLOUDFLARE_API_BASE_URL` → наш путь, `CLOUDFLARE_API_TOKEN` → ключ компании).
+- **Адрес входа в пилоте** — ноутбук в сети Tailscale (`http://mac-erodionov:8787/v1/cloudflare`), не
+  Cloudflare-туннель: его порт 7844 в нашей сети закрыт, а Tailscale ходит обычным 443. На боевом
+  шаге адрес — наш домен; для кланкера меняется только начало адреса.
 - **Открыты такие пути платформы**: `workers/scripts` (код бота), `workers/services` и `workers/workers`
   (те же воркеры: так их смотрит `wrangler`), `workers/durable_objects/namespaces` (пространства
   объектов), `d1/database` (база). Общая настройка `workers/subdomain` — только чтение: её смотрит
