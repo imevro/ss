@@ -27,6 +27,8 @@ export const session = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    // Активная компания. Поле плагина organization: он его и пишет.
+    activeOrganizationId: text('active_organization_id'),
   },
   (t) => [index('session_user_idx').on(t.userId)],
 );

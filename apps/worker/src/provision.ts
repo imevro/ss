@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 
 import type { CompanyProposal } from '@workspace/companies';
 import { companyProposalSchema, planProvision } from '@workspace/companies';
-import { companies, companyDatabases, db } from '@workspace/db';
+import { companyDatabases, db, organization } from '@workspace/db';
 import { createLogger, logStep, messageOf } from '@workspace/log';
 import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
@@ -40,10 +40,14 @@ const password = (): string => randomBytes(24).toString('base64url');
 
 const noop = (): void => undefined;
 
-const readProposal = (settings: unknown): CompanyProposal | undefined => {
-  if (typeof settings !== 'object' || settings === null) return;
-  const raw = (settings as Record<string, unknown>).proposal;
-  const parsed = companyProposalSchema.safeParse(raw);
+/**
+ * Принятое предложение лежит в метаданных компании — столбце плагина со строкой
+ * JSON. Разбираем её целиком, а не ищем поле по кускам.
+ */
+const readProposal = (metadata: string | null): CompanyProposal | undefined => {
+  if (metadata === null) return;
+  const parsedMetadata = JSON.parse(metadata) as Record<string, unknown>;
+  const parsed = companyProposalSchema.safeParse(parsedMetadata.proposal);
   if (!parsed.success) return;
   return parsed.data;
 };
@@ -56,7 +60,7 @@ export const provisionCompanyDatabase = async (data: { readonly companyId: strin
     input: data,
   });
 
-  const rows = await db.select().from(companies).where(eq(companies.id, data.companyId)).limit(1);
+  const rows = await db.select().from(organization).where(eq(organization.id, data.companyId)).limit(1);
   const company = rows[0];
   if (company === undefined) {
     const reason = `компания ${data.companyId} не найдена`;
@@ -70,7 +74,7 @@ export const provisionCompanyDatabase = async (data: { readonly companyId: strin
     return { status: 'skipped', reason: 'база уже выписана' };
   }
 
-  const proposal = readProposal(company.settings);
+  const proposal = readProposal(company.metadata);
   if (proposal === undefined) {
     const reason = 'у компании нет предложения по таблицам';
     await step.finish({ output: reason, kind: 'error' });

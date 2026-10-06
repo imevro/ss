@@ -9,9 +9,9 @@ export const ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop
 export const ID_LENGTH = 20;
 
 export type IdKind =
-  | 'company'
-  | 'membership'
-  | 'invite'
+  | 'organization'
+  | 'member'
+  | 'invitation'
   | 'companyDatabase'
   | 'agentSession'
   | 'app'
@@ -28,9 +28,9 @@ export type IdKind =
   | 'onboarding';
 
 const PREFIX: Record<IdKind, string> = {
-  company: 'comp',
-  membership: 'memb',
-  invite: 'inv',
+  organization: 'comp',
+  member: 'memb',
+  invitation: 'inv',
   companyDatabase: 'cdb',
   agentSession: 'asess',
   app: 'app',

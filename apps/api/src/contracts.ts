@@ -77,7 +77,6 @@ export const companySchema = z.object({
   name: z.string(),
   slug: z.string(),
   status: z.string().meta({ description: 'Состояние компании.' }),
-  settings: z.unknown().meta({ description: 'Принятое предложение таблиц.' }),
 });
 
 export const conversationSchema = z.object({

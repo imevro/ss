@@ -154,7 +154,7 @@ onboarding.post(
     const parsed = newCompanyOf(body);
     if (parsed === undefined) return problem(c, 400, 'bad_request', 'нужны название, предложение и владелец');
 
-    const created = await createCompany({ ...parsed, ownerId: session.user.id });
+    const created = await createCompany({ ...parsed, headers: c.req.raw.headers });
     // Негодное предложение — ошибка человека. Пустая вставка — сбой сервера:
     // говорить «твой запрос плох» в этом случае значило бы соврать.
     if (!created.ok) {

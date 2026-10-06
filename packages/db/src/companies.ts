@@ -9,46 +9,56 @@ import { boolean, index, jsonb, pgSequence, pgTable, text, timestamp, uniqueInde
 
 import { newId } from './ids';
 
-export const companies = pgTable('companies', {
+/**
+ * Компания. Имена таблиц и полей — плагина `organization` better-auth: он читает
+ * ровно эти имена, а мы не держим второго описания той же сущности.
+ *
+ * `metadata` — столбец плагина (строка JSON): в нём лежит принятое предложение
+ * таблиц. `status` — наш лишний столбец со значением по умолчанию.
+ */
+export const organization = pgTable('organization', {
   id: text('id')
     .primaryKey()
-    .$defaultFn(() => newId('company')),
+    .$defaultFn(() => newId('organization')),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
+  logo: text('logo'),
+  metadata: text('metadata'),
   status: text('status').notNull().default('active'),
-  settings: jsonb('settings').notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const memberships = pgTable(
-  'memberships',
+/** Членство. Роль ведёт плагин: `owner`, `admin`, `member` (несколько — через запятую). */
+export const member = pgTable(
+  'member',
   {
     id: text('id')
       .primaryKey()
-      .$defaultFn(() => newId('membership')),
-    companyId: text('company_id')
+      .$defaultFn(() => newId('member')),
+    organizationId: text('organization_id')
       .notNull()
-      .references(() => companies.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     userId: text('user_id').notNull(),
-    role: text('role').notNull().default('owner'),
-    status: text('status').notNull().default('active'),
+    role: text('role').notNull().default('member'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    status: text('status').notNull().default('active'),
   },
-  (t) => [uniqueIndex('memberships_company_user').on(t.companyId, t.userId)],
+  (t) => [uniqueIndex('member_organization_user').on(t.organizationId, t.userId)],
 );
 
-export const invites = pgTable('invites', {
+/** Приглашение. Строку письма собирает плагин; тут только запись. */
+export const invitation = pgTable('invitation', {
   id: text('id')
     .primaryKey()
-    .$defaultFn(() => newId('invite')),
-  companyId: text('company_id')
+    .$defaultFn(() => newId('invitation')),
+  organizationId: text('organization_id')
     .notNull()
-    .references(() => companies.id, { onDelete: 'cascade' }),
+    .references(() => organization.id, { onDelete: 'cascade' }),
   email: text('email').notNull(),
   role: text('role').notNull().default('member'),
-  token: text('token').notNull().unique(),
+  status: text('status').notNull().default('pending'),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  inviterId: text('inviter_id').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -61,7 +71,7 @@ export const companyDatabases = pgTable(
       .$defaultFn(() => newId('companyDatabase')),
     companyId: text('company_id')
       .notNull()
-      .references(() => companies.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     dbName: text('db_name').notNull().unique(),
     roles: jsonb('roles').notNull(),
     cluster: text('cluster').notNull().default('local'),
@@ -83,7 +93,7 @@ export const agentSessions = pgTable(
       .$defaultFn(() => newId('agentSession')),
     companyId: text('company_id')
       .notNull()
-      .references(() => companies.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     conversationId: text('conversation_id').notNull(),
     genticKey: text('gentic_key').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -111,7 +121,7 @@ export const apps = pgTable(
       .$defaultFn(() => newId('app')),
     companyId: text('company_id')
       .notNull()
-      .references(() => companies.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     slug: text('slug').notNull().unique(),
     name: text('name').notNull(),
     source: jsonb('source').notNull().default({}),
@@ -132,7 +142,7 @@ export const auditLog = pgTable(
     id: text('id')
       .primaryKey()
       .$defaultFn(() => newId('auditLog')),
-    companyId: text('company_id').references(() => companies.id, { onDelete: 'cascade' }),
+    companyId: text('company_id').references(() => organization.id, { onDelete: 'cascade' }),
     actorKind: text('actor_kind').notNull().default('user'),
     actorId: text('actor_id'),
     action: text('action').notNull(),
