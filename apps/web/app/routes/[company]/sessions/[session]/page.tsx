@@ -23,6 +23,7 @@ import { Link, redirect, useNavigate, useParams } from 'react-router';
 import type { Route } from './+types/page';
 import type { Turn } from '@/components/chat';
 import { ChatComposer, ChatThread } from '@/components/chat';
+import { sessionAddress, shortId } from '@/lib/address';
 import { api, reasonOf, serverHeaders } from '@/lib/api';
 import { useChatLog } from '@/lib/chat-log';
 import type { ChatEvent, ChatMessage, StoredRow, Work } from '@/lib/chat-state';
@@ -65,10 +66,13 @@ const clock = (iso: string): string => {
   return at.toLocaleDateString('ru', { day: '2-digit', month: '2-digit' });
 };
 
-/** Миниапп показывается спрайтом, чат — лентой: вид выбирает номер. */
-const isApp = (openId: string | undefined): boolean => {
-  if (openId === undefined) return false;
-  return openId.startsWith('app');
+/** Компания: в адресе она названа слагом, в базе живёт под номером. */
+type Company = { readonly id: string; readonly slug: string; readonly name: string };
+
+/** Полный номер открытой записи: он нужен и запросам, и комнате чата. */
+const openIdOf = (chat: Conversation | undefined, app: MiniApp | undefined): string | undefined => {
+  if (chat !== undefined) return chat.id;
+  if (app !== undefined) return app.id;
 };
 
 /**
@@ -78,45 +82,59 @@ const isApp = (openId: string | undefined): boolean => {
 export async function loader({ params, request }: Route.LoaderArgs) {
   const origin = new URL(request.url).origin;
   const headers = serverHeaders(request);
-  const { companyId, openId } = params;
+  const { company: slug, session } = params;
 
   const me = await fetch(`${origin}/v1/me`, { headers });
   if (me.status === 401) throw redirect('/login');
 
+  // Компанию в адресе зовут слагом, а база знает её под номером: номер берём из списка.
+  const companies = await api<{ companies: readonly Company[] }>(`${origin}/v1/companies`, { headers });
+  const company = companies.companies.find((one) => one.slug === slug);
+  if (company === undefined) throw new Response('нет такой компании', { status: 404 });
+
   const conversations = await api<{ conversations: readonly Conversation[] }>(
-    `${origin}/v1/companies/${companyId}/conversations`,
+    `${origin}/v1/companies/${company.id}/conversations`,
     {
       headers,
     },
   );
-  const apps = await api<{ apps: readonly MiniApp[] }>(`${origin}/v1/companies/${companyId}/apps`, { headers });
+  const apps = await api<{ apps: readonly MiniApp[] }>(`${origin}/v1/companies/${company.id}/apps`, { headers });
 
-  const messages = await messagesOf(origin, headers, companyId, openId);
-  return { conversations: conversations.conversations, apps: apps.apps, messages };
+  // Что открыто, решает один номер: он есть и у разговора, и у миниаппа.
+  const chat = conversations.conversations.find((one) => shortId(one.id) === session);
+  const messages = await messagesOf(origin, headers, company.id, chat?.id);
+  return { company, conversations: conversations.conversations, apps: apps.apps, messages };
 }
 
-/** Лента открытого чата. Чат не открыт — ленты нет. */
+/** Лента открытого разговора. Разговор не открыт — ленты нет. */
 const messagesOf = async (
   origin: string,
   headers: Headers,
   companyId: string,
-  openId: string | undefined,
+  conversationId: string | undefined,
 ): Promise<readonly StoredRow[]> => {
-  if (openId === undefined || isApp(openId)) return [];
+  if (conversationId === undefined) return [];
   const data = await api<{ messages: readonly StoredRow[] }>(
-    `${origin}/v1/companies/${companyId}/conversations/${encodeURIComponent(openId)}/messages`,
+    `${origin}/v1/companies/${companyId}/conversations/${encodeURIComponent(conversationId)}/messages`,
     { headers },
   );
   return data.messages;
 };
 
 export default function Company({ loaderData }: Route.ComponentProps) {
-  const { companyId, openId } = useParams();
+  const { session } = useParams();
+  const companyId = loaderData.company.id;
+  const slug = loaderData.company.slug;
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<readonly Conversation[]>(loaderData.conversations);
   const [messages, setMessages] = useState<readonly StoredRow[]>(loaderData.messages);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
+
+  /** Открыто то, чей номер стоит в адресе: разговор или миниапп. */
+  const activeConversation = conversations.find((chat) => shortId(chat.id) === session);
+  const activeApp = loaderData.apps.find((app) => shortId(app.id) === session);
+  const openId = openIdOf(activeConversation, activeApp);
 
   /** Лента собирается переигрыванием журнала: второго пути сборки нет. */
   const log = useChatLog(openId, messages);
@@ -165,10 +183,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
     },
     [append, reloadMessages],
   );
-  useLiveRoom(roomOf(openId), onEvent);
-
-  const activeConversation = conversations.find((chat) => chat.id === openId);
-  const activeApp = loaderData.apps.find((app) => app.id === openId);
+  useLiveRoom(roomOf(activeConversation?.id), onEvent);
 
   /** Первое сообщение заводит чат: он появляется в списке и открывается. */
   const startChat = async (text: string): Promise<void> => {
@@ -189,7 +204,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
           sent_at: new Date().toISOString(),
         },
       ]);
-      navigate(`/c/${companyId}/${created.conversation.id}`);
+      navigate(sessionAddress(slug, created.conversation.id));
     } catch (error) {
       setProblem(reasonOf(error));
     }
@@ -242,7 +257,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
               <SidebarMenu>
                 {loaderData.apps.map((app) => (
                   <SidebarMenuItem key={app.id}>
-                    <SidebarMenuButton isActive={app.id === openId} render={<Link to={`/c/${companyId}/${app.id}`} />}>
+                    <SidebarMenuButton isActive={app.id === openId} render={<Link to={sessionAddress(slug, app.id)} />}>
                       <HugeiconsIcon icon={LayoutGridIcon} className="size-4 shrink-0" />
                       <span className="truncate">{app.name}</span>
                     </SidebarMenuButton>
@@ -263,7 +278,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
                   <SidebarMenuItem key={conversation.id}>
                     <SidebarMenuButton
                       isActive={conversation.id === openId}
-                      render={<Link to={`/c/${companyId}/${conversation.id}`} />}
+                      render={<Link to={sessionAddress(slug, conversation.id)} />}
                     >
                       <SourceIcon source={conversation.source} />
                       <span className="truncate">{conversation.title}</span>
@@ -372,10 +387,10 @@ const eventOfRoom = (event: ClientEvent): ChatEvent => {
   return { kind: 'ended' };
 };
 
-/** Комната открытого чата. Миниапп и пустое окно комнаты не имеют. */
-const roomOf = (openId: string | undefined): string | null => {
-  if (openId === undefined || isApp(openId)) return null;
-  return conversationRoom(openId);
+/** Комната открытого разговора. Пустое окно комнаты не имеет. */
+const roomOf = (conversationId: string | undefined): string | null => {
+  if (conversationId === undefined) return null;
+  return conversationRoom(conversationId);
 };
 
 const sourceOf = (conversation: Conversation | undefined): string => {

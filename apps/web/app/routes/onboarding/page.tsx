@@ -21,6 +21,7 @@ import { redirect } from 'react-router';
 import type { Route } from './+types/page';
 import type { Turn } from '@/components/chat';
 import { ChatComposer, ChatThread } from '@/components/chat';
+import { companyAddress } from '@/lib/address';
 import { api, reasonOf, serverHeaders } from '@/lib/api';
 import { useLiveRoom } from '@/lib/live';
 import { noindexMeta } from '@/lib/page-title';
@@ -278,7 +279,7 @@ export default function Onboarding({ loaderData }: Route.ComponentProps) {
         <section className="flex shrink-0 flex-col gap-4 border-border border-t px-6 py-4">
           <p>Компания «{company.name}» заведена, база выписывается.</p>
           <div>
-            <Button variant="outline" onClick={() => globalThis.location.assign(`/c/${company.id}`)}>
+            <Button variant="outline" onClick={() => globalThis.location.assign(companyAddress(company.slug))}>
               К чатам
             </Button>
           </div>

@@ -3,12 +3,13 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle }
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/page';
+import { companyAddress } from '@/lib/address';
 import { api } from '@/lib/api';
 import { noindexMeta } from '@/lib/page-title';
 
 export const meta = () => noindexMeta(['Компании'], 'Компании, к которым у вас есть доступ.');
 
-type Company = { readonly id: string; readonly name: string; readonly database: string };
+type Company = { readonly id: string; readonly slug: string; readonly name: string; readonly database: string };
 
 /**
  * Загрузчик спрашивает, кто вошёл, и уводит на нужный экран. Делается на сервере:
@@ -33,7 +34,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       <h1 className="px-4 font-heading font-medium text-2xl">Компании</h1>
       <ItemGroup>
         {loaderData.companies.map((company) => (
-          <Item key={company.id} render={<a href={`/c/${company.id}`}>{company.name}</a>}>
+          <Item key={company.id} render={<a href={companyAddress(company.slug)}>{company.name}</a>}>
             <ItemContent>
               <ItemTitle>{company.name}</ItemTitle>
               <ItemDescription>База компании</ItemDescription>

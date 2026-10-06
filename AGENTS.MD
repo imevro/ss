@@ -119,6 +119,7 @@ Subjects:
 - [chat](.agents/memory/chat/README.md) — how the panel builds the thread and the work line.
 - [deploy](.agents/memory/deploy/README.md) — how we build, release and run our boxes.
 - [cloudflare](.agents/memory/cloudflare/README.md) — how a clanker reaches the Cloudflare platform.
+- [engineering](.agents/memory/engineering/README.md) — как мы пишем и что решаем заново.
 
 ## Adding a topic
 
