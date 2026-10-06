@@ -364,7 +364,7 @@ const shownProblemOf = (page: string, chat: string): string => {
 
 /** Событие комнаты становится событием чата: чат — это её дела, не экран. */
 const eventOfRoom = (event: ClientEvent): ChatEvent => {
-  if (event.kind === 'started') return { kind: 'started' };
+  if (event.kind === 'started') return { kind: 'started', messageId: event.messageId };
   if (event.kind === 'chunk') return { kind: 'chunk', text: event.text };
   if (event.kind === 'live') return { kind: 'live', calls: event.calls, thinking: event.thinking };
   if (event.kind === 'thought') return { kind: 'thought' };

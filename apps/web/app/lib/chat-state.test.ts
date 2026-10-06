@@ -243,4 +243,73 @@ describe('сведение журнала', () => {
     ]);
     expect(state.messages.map((message) => message.text)).toEqual(['живой']);
   });
+
+  test('подписка посреди хода: собранная реплика заменяет идущую запись', () => {
+    // Кадра `started` страница не видела: в журнале только куски. Идущая запись в
+    // ленте уже есть (её заводит API с началом хода) — реплика должна быть одна.
+    const stored = [
+      { id: 'db1', role: 'user', text: 'вопрос', sent_at: at(0) },
+      {
+        id: 'db2',
+        role: 'assistant',
+        text: 'Привет',
+        sent_at: at(1),
+        raw: { work: { seconds: 2, names: [], thoughts: 0, calls: [], thinking: false, endedAt: null } },
+      },
+    ];
+    const state = stateOf(
+      stored,
+      log([
+        { kind: 'chunk', text: 'Привет, ' },
+        { kind: 'chunk', text: 'чем помочь?' },
+      ]),
+    );
+    expect(state.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      'user:вопрос',
+      'assistant:Привет, чем помочь?',
+    ]);
+  });
+
+  test('конец хода после подписки посреди хода: номер записи ложится на реплику', () => {
+    const stored = [
+      { id: 'db1', role: 'user', text: 'вопрос', sent_at: at(0) },
+      {
+        id: 'db2',
+        role: 'assistant',
+        text: 'ответ',
+        sent_at: at(1),
+        raw: { work: { seconds: 3, names: [], thoughts: 0, calls: [], thinking: false, endedAt: null } },
+      },
+    ];
+    const entries = log([
+      { kind: 'chunk', text: 'ответ' },
+      { kind: 'ended', messageId: 'db2' },
+    ]);
+    expect(stateOf(stored, entries).messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      'user:вопрос',
+      'assistant:ответ',
+    ]);
+  });
+
+  test('ход с первым кадром: реплика одна и в ней всё, что успело прийти', () => {
+    const stored = [
+      { id: 'db1', role: 'user', text: 'вопрос', sent_at: at(0) },
+      {
+        id: 'db2',
+        role: 'assistant',
+        text: 'При',
+        sent_at: at(1),
+        raw: { work: { seconds: 1, names: [], thoughts: 0, calls: [], thinking: true, endedAt: null } },
+      },
+    ];
+    const entries = log([
+      { kind: 'asked', id: 'm1', messageId: 'db1' },
+      { kind: 'started', messageId: 'db2' },
+      { kind: 'chunk', text: 'Привет' },
+    ]);
+    expect(stateOf(stored, entries).messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      'user:вопрос',
+      'assistant:Привет',
+    ]);
+  });
 });

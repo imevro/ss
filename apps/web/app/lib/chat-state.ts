@@ -33,10 +33,10 @@ export type Work = {
  */
 export const workOfStored = (stored: StoredWork, at: string): Work => {
   const calls = callsOfWork(stored);
-  // Ход ещё идёт: запись заведена в начале хода и конца у неё нет. Часы идут от
+  // Ход ещё идёт: запись заведена в начале хода, и конца у неё нет. Часы идут от
   // времени записи, строка показывает то же, что видел человек до перезагрузки.
-  if (stored.thinking === true) {
-    return { calls, thinking: true, thoughts: stored.thoughts, startedAt: at, endedAt: null };
+  if (stored.endedAt === null) {
+    return { calls, thinking: stored.thinking === true, thoughts: stored.thoughts, startedAt: at, endedAt: null };
   }
   return {
     calls,
@@ -137,7 +137,9 @@ const withLive = (state: ChatState, at: string, edit: (message: ChatMessage) => 
   const id = liveIdOf(state.turns, state.liveId);
   const last = state.messages.at(-1);
   if (last === undefined || last.id !== id) {
-    return { ...state, messages: [...state.messages, edit(liveMessage(state.turns, at, state.liveId))] };
+    // Реплику завели, не дождавшись кадра `started` (страница подписалась посреди хода):
+    // держим её за свой номер и помним, что собираем именно её.
+    return { ...state, messages: [...state.messages, edit(liveMessage(state.turns, at, state.liveId))], liveId: id };
   }
   return { ...state, messages: [...state.messages.slice(0, -1), edit(last)] };
 };
@@ -242,16 +244,23 @@ export const fold = (entries: readonly LogEntry[]): ChatState =>
  * Свежая лента: переигрывание журнала поверх готовых реплик с сервера.
  *
  * Реплика из журнала и запись на сервере — одна и та же реплика: первая уступает
- * второй по номеру записи. Номер приходит первым кадром хода, поэтому две копии
- * сходятся по имени, а сверка по времени не нужна: журнал живёт до перезагрузки,
- * и ленты, которой страница не видела, в нём быть не может.
+ * второй по номеру записи, который приходит первым кадром хода. Идущий ход — особый
+ * случай: собранная из кусков реплика свежее записи (куски в записи ещё не легли),
+ * поэтому пока ход собирается, идущую запись прячем и показываем реплику.
  */
 export const stateOf = (messages: readonly StoredRow[], entries: readonly LogEntry[]): ChatState => {
   const replayed = fold(entries);
-  const stored = settledOf(messages);
-  const storedIds = new Set(stored.map((message) => message.id.slice('db-'.length)));
+  const assembling = replayed.liveId !== null;
+  const settled = settledOf(messages).filter((message) => !hiddenWhileAssembling(message, assembling));
+  const storedIds = new Set(settled.map((message) => message.id.slice('db-'.length)));
   const gathered = replayed.messages.filter((message) => !storedIds.has(message.id));
-  return { ...replayed, messages: [...stored, ...gathered] };
+  return { ...replayed, messages: [...settled, ...gathered] };
+};
+
+/** Идущая запись ленты, пока ход собирается: собираемая реплика свежее её. */
+const hiddenWhileAssembling = (message: ChatMessage, assembling: boolean): boolean => {
+  if (!assembling) return false;
+  return message.storedWork?.endedAt === null;
 };
 
 /** Запись журнала добавляется в конец. Старые записи уходят — лента читается с конца. */

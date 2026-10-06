@@ -77,10 +77,13 @@ const callsOfField = (value: unknown): readonly ToolCall[] => {
   return callsOf(value);
 };
 
-/** Конец хода из поля: не время — ход ещё идёт, конца у него нет. */
-const endedAtOfField = (value: unknown): string | null => {
-  if (typeof value !== 'string') return null;
-  return value;
+/**
+ * Конец хода из поля: время — ход закрыт; поле есть, а времени нет — ход идёт;
+ * поля нет вовсе — запись старая, её ход считаем закрытым.
+ */
+const endedAtOfField = (value: unknown): string | null | undefined => {
+  if (typeof value === 'string') return value;
+  if (value === null) return null;
 };
 
 /**
@@ -101,15 +104,16 @@ export const workOfRaw = (raw: unknown): StoredWork | undefined => {
     return [name];
   });
   const calls = callsOfField(fields.calls);
-  const endedAt = endedAtOfField(fields.endedAt);
-  return {
+  const base: StoredWork = {
     seconds: fields.seconds,
     names,
     thoughts: fields.thoughts,
     calls,
     thinking: fields.thinking === true,
-    endedAt,
   };
+  const endedAt = endedAtOfField(fields.endedAt);
+  if (endedAt === undefined) return base;
+  return { ...base, endedAt };
 };
 
 /** Сырое поле из базы: строка с байтами JSON разбирается, готовое значение идёт как есть. */

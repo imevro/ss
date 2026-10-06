@@ -151,12 +151,16 @@ const openTurn = async (companyId: string, conversationId: string, messageId: st
   const work: StoredWork = { seconds: 0, names: [], thoughts: 0, calls: [], thinking: true, endedAt: null };
   await tenant`
     INSERT INTO ctx.messages (id, conversation_id, role, author_name, text, raw)
-    VALUES (${messageId}, ${conversationId}, ${'assistant'}, ${'агент'}, ${''}, ${rawOf(work)})
+    VALUES (${messageId}, ${conversationId}, ${'assistant'}, ${'агент'}, ${''}, ${rawOf(work)}::text::jsonb)
   `;
 };
 
-/** Сырое поле записи: ход работы лежит под ключом `work` и нигде больше. */
-const rawOf = (work: StoredWork): { readonly work: StoredWork } => ({ work });
+/**
+ * Сырое поле записи: ход работы под ключом `work`, строкой байтов JSON. Приведение
+ * в SQL двойное (`::text::jsonb`): без первого драйвер отдаёт строку как готовый JSON,
+ * и база хранит её строкой, а не разбирает в объект.
+ */
+const rawOf = (work: StoredWork): string => JSON.stringify({ work });
 
 /** Думает ли ход: законченный ход уже не думает. */
 const thinkingOf = (ended: boolean, thinking: boolean): boolean => {
@@ -192,7 +196,7 @@ const writeTurn = async (
   };
   const raw = rawOf(work);
   await tenant`
-    UPDATE ctx.messages SET text = ${state.text}, raw = ${raw} WHERE id = ${messageId}
+    UPDATE ctx.messages SET text = ${state.text}, raw = ${raw}::text::jsonb WHERE id = ${messageId}
   `;
 };
 
@@ -254,7 +258,12 @@ export const askAgent = async (companyId: string, conversationId: string, questi
 
   // Срок общий на ответ: сработает один раз, а повторное закрытие соединения безвредно.
   const deadline = globalThis.setTimeout(() => settle(''), DEADLINE_MS);
-  socket.addEventListener('close', () => globalThis.clearTimeout(deadline));
+  socket.addEventListener('close', () => {
+    globalThis.clearTimeout(deadline);
+    // Соединение закрылось само — агент оборвал связь или упал: кадра не будет.
+    // Отдаём то, что успело прийти, иначе запись хода и очередь чата повиснут.
+    settle(parts.join(''));
+  });
 
   socket.addEventListener('open', () => {
     writes.push(openTurn(companyId, conversationId, messageId));
