@@ -2,7 +2,11 @@ import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
 
 import type { Route } from './+types/root';
+import { noindexMeta } from '@/lib/page-title';
 import '@workspace/ui/globals.css';
+
+/** Пол: страница без своего заголовка всё равно названа. */
+export const meta = () => noindexMeta([], 'Панель компании.');
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (

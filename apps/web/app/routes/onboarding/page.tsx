@@ -18,14 +18,14 @@ import {
 import { useCallback, useState } from 'react';
 import { redirect } from 'react-router';
 
-import type { Route } from './+types/onboarding';
+import type { Route } from './+types/page';
 import type { Turn } from '@/components/chat';
 import { ChatComposer, ChatThread } from '@/components/chat';
 import { api, reasonOf, serverHeaders } from '@/lib/api';
 import { useLiveRoom } from '@/lib/live';
 import { noindexMeta } from '@/lib/page-title';
 
-export const meta = () => noindexMeta(['Заводим компанию']);
+export const meta = () => noindexMeta(['Заводим компанию'], 'Несколько вопросов — и компания готова к работе.');
 
 /** Шаг, каким его отдал сервер: страница показывает, вопросов не выдумывает. */
 type Step = {

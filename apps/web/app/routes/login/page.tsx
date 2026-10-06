@@ -7,7 +7,7 @@ import { errorText } from '@/lib/api';
 import { authClient } from '@/lib/auth-client';
 import { noindexMeta } from '@/lib/page-title';
 
-export const meta = () => noindexMeta(['Вход']);
+export const meta = () => noindexMeta(['Вход'], 'Вход в панель компании.');
 
 export default function Login() {
   const [email, setEmail] = useState('');

@@ -2,11 +2,11 @@ import { Badge } from '@workspace/ui/components/badge';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@workspace/ui/components/item';
 import { redirect } from 'react-router';
 
-import type { Route } from './+types/home';
+import type { Route } from './+types/page';
 import { api } from '@/lib/api';
 import { noindexMeta } from '@/lib/page-title';
 
-export const meta = () => noindexMeta(['Компании']);
+export const meta = () => noindexMeta(['Компании'], 'Компании, к которым у вас есть доступ.');
 
 type Company = { readonly id: string; readonly name: string; readonly database: string };
 

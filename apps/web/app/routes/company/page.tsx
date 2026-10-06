@@ -20,7 +20,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { Link, redirect, useNavigate, useParams } from 'react-router';
 
-import type { Route } from './+types/company';
+import type { Route } from './+types/page';
 import type { Turn } from '@/components/chat';
 import { ChatComposer, ChatThread } from '@/components/chat';
 import { api, reasonOf, serverHeaders } from '@/lib/api';
@@ -30,7 +30,7 @@ import { workOfStored } from '@/lib/chat-state';
 import { useLiveRoom } from '@/lib/live';
 import { noindexMeta } from '@/lib/page-title';
 
-export const meta = () => noindexMeta(['Чаты']);
+export const meta = () => noindexMeta(['Чаты'], 'Чаты с агентом компании.');
 
 type Conversation = {
   readonly id: string;
