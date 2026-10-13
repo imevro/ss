@@ -157,26 +157,40 @@ export const ChatThread = ({
 export const ChatComposer = ({
   placeholder,
   busy,
+  queued = [],
   onSend,
+  onFlush,
   onSkip,
 }: {
   readonly placeholder: string;
   readonly busy: boolean;
+  /** Вопросы, ждущие хода агента. В ленте их нет: они ещё не отправлены. */
+  readonly queued?: readonly string[];
   readonly onSend: (text: string) => Promise<void>;
+  /** Пустой Enter пускает верхний вопрос очереди сейчас. */
+  readonly onFlush?: (() => void) | undefined;
   /** Пропуск шага. Шаг обязательный — пропуска нет. */
   readonly onSkip?: (() => void) | undefined;
 }) => {
   const [draft, setDraft] = useState('');
 
+  /**
+   * Enter: с текстом — вопрос уходит, пустой — верхний вопрос очереди уходит сейчас.
+   * Агент занят — вопрос встанет в очередь: очередь видна, а лента не врёт.
+   */
   const send = (text: string): void => {
     const message = text.trim();
-    if (message === '' || busy) return;
+    if (message === '') {
+      if (queued.length > 0) onFlush?.();
+      return;
+    }
     setDraft('');
     void onSend(message);
   };
 
   return (
     <div className="mb-4">
+      {queued.length > 0 && <QueuedQuestions items={queued} />}
       <PromptInput onSubmit={send}>
         <PromptInputTextarea
           value={draft}
@@ -192,7 +206,7 @@ export const ChatComposer = ({
             )}
           </PromptInputActionGroup>
           <PromptInputAction>
-            <Button disabled={busy || draft.trim() === ''} onClick={() => send(draft)}>
+            <Button disabled={draft.trim() === '' && queued.length === 0} onClick={() => send(draft)}>
               Отправить
             </Button>
           </PromptInputAction>
@@ -201,3 +215,17 @@ export const ChatComposer = ({
     </div>
   );
 };
+
+/** Вопросы, ждущие хода агента: человек их написал, но агент их ещё не получил. */
+const QueuedQuestions = ({ items }: { readonly items: readonly string[] }) => (
+  <div className="mb-2 px-3 text-muted-foreground">
+    <ol className="flex flex-col gap-1">
+      {items.map((text) => (
+        <li key={text} className="truncate">
+          {text}
+        </li>
+      ))}
+    </ol>
+    <p>Enter отправит верхний вопрос сейчас.</p>
+  </div>
+);

@@ -128,6 +128,12 @@ export const answerBodySchema = z.object({
 
 export const textBodySchema = z.object({ text: z.string().meta({ description: 'Текст сообщения.' }) });
 
+/** Тело сообщения в чат. Признак `interrupt` пускает вопрос вне очереди. */
+export const messageBodySchema = z.object({
+  text: z.string().meta({ description: 'Текст сообщения.' }),
+  interrupt: z.boolean().optional().meta({ description: 'Пустить вопрос сейчас: идущий ход чата останавливается.' }),
+});
+
 /** Ответ на запись сообщения: номер записи нужен странице, чтобы опознать свой вопрос. */
 export const writtenSchema = z.object({
   ok: z.boolean(),

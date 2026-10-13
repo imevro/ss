@@ -224,6 +224,13 @@ export const askAgent = async (companyId: string, conversationId: string, questi
   // `-<число>:<поток>`, то есть только знаки, безопасные в пути.
   const url = `${config.agentUrl}/room/${key}?token=${encodeURIComponent(config.agentSecret)}`;
   const socket = new WebSocket(url);
+  const lane = laneOf(companyId, conversationId);
+  // Остановка хода: агент отдаёт `done` на то, что успел, и очередь чата идёт дальше.
+  const stop = (): void => {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ kind: 'stop' }));
+  };
+  running.set(lane, stop);
   const startedAt = Date.now();
   const messageId = newId('message');
   const waiter = Promise.withResolvers<Answer>();
@@ -244,13 +251,26 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     thoughts: thoughts.length,
   });
 
+  /**
+   * Шаг записи идёт в копилку. Отказ шага не должен ронять мост: незамеченный отказ
+   * гасит процесс целиком, а ход обязан дойти до конца и сказать человеку про беду.
+   */
+  const record = (step: Promise<void>): void => {
+    writes.push(
+      step.catch((error: unknown) => {
+        log.error('шаг хода не записан', { companyId, messageId, error: String(error) });
+      }),
+    );
+  };
+
   /** Запись догоняет ход. Ответы записи держим: конец хода ложится последним. */
   const tell = (ended: boolean): void => {
-    writes.push(writeTurn(companyId, messageId, startedAt, stateOf(), ended));
+    record(writeTurn(companyId, messageId, startedAt, stateOf(), ended));
   };
 
   /** Ход закончен: закрываем соединение и отдаём ответ наружу. */
   const settle = (final: string): void => {
+    running.delete(lane);
     socket.close();
     // Закрытые соединения больше не пишут: очередь обрывается на том, что успело лечь.
     waiter.resolve({ text: final, messageId, startedAt, state: { ...stateOf(), text: final } });
@@ -266,7 +286,7 @@ export const askAgent = async (companyId: string, conversationId: string, questi
   });
 
   socket.addEventListener('open', () => {
-    writes.push(openTurn(companyId, conversationId, messageId));
+    record(openTurn(companyId, conversationId, messageId));
     say(room, { kind: 'started', conversationId, messageId });
     socket.send(JSON.stringify({ kind: 'ask', text: question }));
   });
@@ -373,6 +393,22 @@ const lastFlag = (flags: readonly boolean[], fallback: boolean): boolean => {
 const pending = new Map<string, Promise<void>>();
 
 /**
+ * Идущий ход по чату: на ключ хода ложится его остановка. Ход у чата один,
+ * поэтому и запись одна. Остановка говорит агенту `stop`: он отдаёт `done` на то,
+ * что успел, и очередь чата идёт дальше — так вопрос человека пускается сразу,
+ * не дожидаясь конца чужого хода.
+ */
+const running = new Map<string, () => void>();
+
+/** Ключ хода: у чата один ход за раз, поэтому ключ — это компания и чат вместе. */
+const laneOf = (companyId: string, conversationId: string): string => `${companyId}:${conversationId}`;
+
+/** Остановить идущий ход чата. Идущего хода нет — останавливать нечего. */
+export const stopTurn = (companyId: string, conversationId: string): void => {
+  running.get(laneOf(companyId, conversationId))?.();
+};
+
+/**
  * Один ход: спросить агента, дождаться кусков, записать ответ в ленту и только
  * потом объявить конец. Порядок важен: страница по концу читает ленту заново,
  * и запись должна быть уже на месте.
@@ -381,7 +417,7 @@ const pending = new Map<string, Promise<void>>();
  * комнаты сам: иначе человек ждёт ответа, которого не будет.
  */
 export const runTurn = (companyId: string, conversationId: string, question: string): void => {
-  const lane = `${companyId}:${conversationId}`;
+  const lane = laneOf(companyId, conversationId);
   const earlier = pending.get(lane);
   const start = async (): Promise<void> => {
     if (earlier !== undefined) await earlier;
