@@ -12,12 +12,13 @@ import { Hono } from 'hono';
 import { describeRoute, resolver } from 'hono-openapi';
 import { z } from 'zod';
 
-import { runTurn } from './agent';
+import { runTurn, stopTurn } from './agent';
 import { auth } from './auth';
 import { companiesOf, databaseOf, findCompany } from './companies';
 import {
   companySchema,
   conversationSchema,
+  messageBodySchema,
   messageSchema,
   miniAppSchema,
   textBodySchema,
@@ -105,13 +106,17 @@ conversations.get(
 /**
  * Сообщение человека. Запись отвечает сразу, ответ агента придёт потоком
  * в комнату чата: человек не ждёт модель в открытом запросе.
+ *
+ * Признак `interrupt` пускает вопрос вне очереди: идущий ход чата останавливается,
+ * и вопрос идёт первым. Без него ходы идут по очереди — так вопросы, написанные
+ * поверх идущего ответа, ждут своей очереди, а не перебивают агента.
  */
 conversations.post(
   '/v1/companies/:id/conversations/:conversationId/messages',
   describeRoute({
     tags: ['conversations'],
     summary: 'Сказать в чат',
-    requestBody: { content: { 'application/json': { schema: resolver(textBodySchema) } } },
+    requestBody: { content: { 'application/json': { schema: resolver(messageBodySchema) } } },
     responses: {
       201: jsonResponse('Сообщение записано.', writtenSchema),
       400: badRequest,
@@ -153,6 +158,8 @@ conversations.post(
 
     // Человек не ждёт агента в ответе на запись: вопрос уходит в мост, ответ придёт
     // в комнату чата кусками, а готовый ляжет в ленту.
+    // «Сейчас» — идущий ход чата останавливается, вопрос встаёт первым в очереди.
+    if (interruptOf(body)) stopTurn(companyId, conversationId);
     void runTurn(companyId, conversationId, text);
     // Номер записи уходит странице: по нему её вопрос уступает записи в ленте.
     return c.json({ ok: true, messageId }, 201);
@@ -282,4 +289,11 @@ const textOf = (body: unknown): string | undefined => {
   const value = (body as Record<string, unknown>).text;
   if (typeof value !== 'string' || value.trim() === '') return;
   return value.trim();
+};
+
+/** Просьба пустить вопрос сейчас. Признака нет или он не признак — вопрос в очередь. */
+const interruptOf = (body: unknown): boolean => {
+  if (typeof body !== 'object' || body === null) return false;
+  if (!('interrupt' in body)) return false;
+  return body.interrupt === true;
 };

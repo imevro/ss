@@ -1,7 +1,7 @@
 import { LayoutGridIcon, Message01Icon, SlackIcon, TelegramIcon, WhatsappIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { ClientEvent } from '@workspace/types';
-import { conversationRoom } from '@workspace/types';
+import { conversationRoom, workOfRaw } from '@workspace/types';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@workspace/ui/components/empty';
 import {
   Sidebar,
@@ -17,7 +17,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '@workspace/ui/components/sidebar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, redirect, useNavigate, useParams } from 'react-router';
 
 import type { Route } from './+types/page';
@@ -128,7 +128,10 @@ export default function Company({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<readonly Conversation[]>(loaderData.conversations);
   const [messages, setMessages] = useState<readonly StoredRow[]>(loaderData.messages);
-  const [busy, setBusy] = useState(false);
+  /** Запись вопроса идёт, а ход ещё не начался: очередь ждёт начала, а не ответа. */
+  const [awaiting, setAwaiting] = useState(false);
+  /** Новый чат заводится. */
+  const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState('');
 
   /** Открыто то, чей номер стоит в адресе: разговор или миниапп. */
@@ -136,9 +139,29 @@ export default function Company({ loaderData }: Route.ComponentProps) {
   const activeApp = loaderData.apps.find((app) => shortId(app.id) === session);
   const openId = openIdOf(activeConversation, activeApp);
 
+  /**
+   * Вопросы, ждущие хода агента: в ленте их нет — они ещё не отправлены. Очередь
+   * принадлежит чату: открыли другой — вызывать в нём чужой вопрос нечего.
+   */
+  const [queue, setQueue] = useState<{ readonly chat: string | undefined; readonly items: readonly string[] }>({
+    chat: openId,
+    items: [],
+  });
+  if (queue.chat !== openId) setQueue({ chat: openId, items: [] });
+
   /** Лента собирается переигрыванием журнала: второго пути сборки нет. */
   const log = useChatLog(openId, messages);
   const append = log.append;
+
+  /**
+   * Идёт ход агента: у идущего хода конца нет. Свою страницу ведёт журнал, а зашедшую
+   * посреди хода — лента сервера: там у идущего ответа та же отметка, что и в записи.
+   */
+  const live = log.state.work !== null && log.state.work.endedAt === null;
+  const recorded = workOfRaw(messages.at(-1)?.raw)?.endedAt === null;
+  const working = live || recorded;
+  /** Агент занят: очередь ждёт, пока он освободится. */
+  const busy = working || awaiting || starting;
 
   // Открыли другой чат — готовые реплики приходят от загрузчика, журнал свой.
   useEffect(() => {
@@ -179,6 +202,8 @@ export default function Company({ loaderData }: Route.ComponentProps) {
         void reloadMessages();
         return;
       }
+      // Ход начался или сорвался: запись дошла, и очередь больше её не ждёт.
+      if (event.kind === 'started' || event.kind === 'failed') setAwaiting(false);
       append(eventOfRoom(event));
     },
     [append, reloadMessages],
@@ -188,7 +213,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
   /** Первое сообщение заводит чат: он появляется в списке и открывается. */
   const startChat = async (text: string): Promise<void> => {
     if (companyId === undefined) return;
-    setBusy(true);
+    setStarting(true);
     setProblem('');
     try {
       const created = await api<{ conversation: Conversation }>(`/v1/companies/${companyId}/conversations`, {
@@ -208,28 +233,77 @@ export default function Company({ loaderData }: Route.ComponentProps) {
     } catch (error) {
       setProblem(reasonOf(error));
     }
-    setBusy(false);
+    setStarting(false);
   };
 
-  /** Сообщение в открытый чат. Ответ агента придёт потоком в комнату чата. */
-  const writeToChat = async (text: string): Promise<void> => {
-    if (companyId === undefined || openId === undefined) return;
-    setBusy(true);
-    setProblem('');
-    try {
-      // Вопрос пишем в журнал сразу, с временным номером: он виден, пока идёт запись.
-      const temporary = `me-${Date.now()}`;
-      append({ kind: 'ask', id: temporary, text, at: new Date().toISOString() });
-      const written = await api<{ readonly messageId: string }>(
-        `/v1/companies/${companyId}/conversations/${encodeURIComponent(openId)}/messages`,
-        { method: 'POST', body: JSON.stringify({ text }) },
-      );
-      // Запись сделана: вопрос берёт её номер, чтобы пришедшая лента его вытеснила.
-      append({ kind: 'asked', id: temporary, messageId: written.messageId });
-    } catch (error) {
-      setProblem(reasonOf(error));
+  /**
+   * Вопрос в открытый чат. Запись отвечает сразу, ответ агента придёт потоком
+   * в комнату чата. `now` — пустить вопрос сейчас: идущий ход чата останавливается.
+   */
+  const writeToChat = useCallback(
+    async (text: string, now: boolean): Promise<void> => {
+      if (companyId === undefined || openId === undefined) return;
+      setAwaiting(true);
+      setProblem('');
+      try {
+        // Вопрос пишем в журнал сразу, с временным номером: он виден, пока идёт запись.
+        const temporary = `me-${Date.now()}`;
+        append({ kind: 'ask', id: temporary, text, at: new Date().toISOString() });
+        const written = await api<{ readonly messageId: string }>(
+          `/v1/companies/${companyId}/conversations/${encodeURIComponent(openId)}/messages`,
+          { method: 'POST', body: JSON.stringify({ text, interrupt: now }) },
+        );
+        // Запись сделана: вопрос берёт её номер, чтобы пришедшая лента его вытеснила.
+        append({ kind: 'asked', id: temporary, messageId: written.messageId });
+      } catch (error) {
+        setProblem(reasonOf(error));
+        setAwaiting(false);
+      }
+    },
+    [append, companyId, openId],
+  );
+
+  /** Отправка идёт: второй вопрос из очереди не заказывается, пока этот не записан. */
+  const releasing = useRef(false);
+
+  /** Взять верхний вопрос очереди и отправить его. */
+  const release = useCallback(
+    async (text: string, now: boolean): Promise<void> => {
+      await writeToChat(text, now);
+      releasing.current = false;
+    },
+    [writeToChat],
+  );
+
+  /**
+   * Очередь идёт сама: ход кончился — верхний вопрос уходит. Свой вопрос человек
+   * ставит в очередь, пока агент занят, и достаёт его пустым Enter, не дожидаясь хода.
+   */
+  useEffect(() => {
+    if (busy || releasing.current) return;
+    const head = queue.items.at(0);
+    if (head === undefined) return;
+    releasing.current = true;
+    setQueue((current) => ({ ...current, items: current.items.slice(1) }));
+    void release(head, false);
+  }, [busy, queue, release]);
+
+  /** Вопрос человека: агент занят — вопрос ждёт в очереди, иначе уходит сейчас. */
+  const ask = async (text: string): Promise<void> => {
+    if (busy) {
+      setQueue((current) => ({ ...current, items: [...current.items, text] }));
+      return;
     }
-    setBusy(false);
+    await writeToChat(text, false);
+  };
+
+  /** Пустой Enter: верхний вопрос очереди уходит сейчас, идущий ход перебивается. */
+  const flushQueue = (): void => {
+    const head = queue.items.at(0);
+    if (head === undefined || releasing.current) return;
+    releasing.current = true;
+    setQueue((current) => ({ ...current, items: current.items.slice(1) }));
+    void release(head, true);
   };
 
   const turns: readonly Turn[] = turnsOf(log.state.messages, log.state.work);
@@ -319,7 +393,13 @@ export default function Company({ loaderData }: Route.ComponentProps) {
           <>
             <ChatThread turns={turns} />
             <div className="mx-auto w-full max-w-3xl shrink-0">
-              <ChatComposer placeholder="Написать сообщение" busy={busy} onSend={writeToChat} />
+              <ChatComposer
+                placeholder="Написать сообщение"
+                busy={busy}
+                queued={queue.items}
+                onSend={ask}
+                onFlush={flushQueue}
+              />
             </div>
           </>
         )}
