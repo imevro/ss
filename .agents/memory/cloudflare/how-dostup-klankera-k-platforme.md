@@ -21,13 +21,13 @@ wrangler deploy
 
 ## Как ключ попадает на коробку кланкера (сделано 2026-10-05)
 
-Ключ пилотной компании `.solutions` (`comp_Tp62Im4Kwj1zAawW3A6gVh`) выдан на год и лежит:
+Ключ пилотной компании `.solutions` (номер вида `comp_…`) выдан на год и лежит:
 
 - на ноутбуке — `~/.ss-secrets/cloudflare-pilot.env`;
 - на коробке `gentic-ss` — `/data/secrets/cloudflare.env` (права 600), вне рабочего дерева.
 
-Адрес входа в пилоте — ноутбук в сети Tailscale: `http://mac-erodionov:8787/v1/cloudflare`
-(адрес `100.76.130.8`). Публичного адреса у нашего API нет: имя `ss.erodionov.com` не заведено,
+Адрес входа в пилоте — ноутбук в сети Tailscale (`http://<узел>:8787/v1/cloudflare`).
+Публичного адреса у нашего API нет: имя `ss.erodionov.com` не заведено,
 приложения на Fly тоже нет, а Cloudflare-туннель с этой сети не поднимается (см.
 `gotcha-port-tunnelya-zakryt.md`). Пилот работает, пока ноутбук не спит.
 

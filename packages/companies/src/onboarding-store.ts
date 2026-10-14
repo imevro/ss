@@ -9,6 +9,7 @@ import { db, userOnboarding } from '@workspace/db';
 import { eq } from 'drizzle-orm';
 
 import type { CompanyProposal } from './proposal';
+import { companyProposalSchema } from './proposal';
 import type { OnboardingAnswers } from './steps';
 import { answersOf, EMPTY_ANSWERS } from './steps';
 
@@ -22,9 +23,14 @@ export type OnboardingState = {
 
 const EMPTY: OnboardingState = { answers: EMPTY_ANSWERS, proposal: null, status: 'started', companyId: null };
 
+/**
+ * Предложение из хранилища. Разбираем схемой, а не приведением: испорченная
+ * запись должна дать пусто, а не чужой вид, который уронит страницу.
+ */
 const proposalOf = (value: unknown): CompanyProposal | null => {
-  if (value === null || value === undefined) return null;
-  return value as CompanyProposal;
+  const parsed = companyProposalSchema.safeParse(value);
+  if (!parsed.success) return null;
+  return parsed.data;
 };
 
 /** Что уже пройдено человеком. Нет строки — онбординг ещё не начат. */

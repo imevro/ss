@@ -52,7 +52,11 @@ export const account = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('account_user_idx').on(t.userId)],
+  (t) => [
+    index('account_user_idx').on(t.userId),
+    // Вход по внешнему поставщику ищет запись по паре «поставщик + его номер».
+    index('account_provider_account').on(t.providerId, t.accountId),
+  ],
 );
 
 export const verification = pgTable(

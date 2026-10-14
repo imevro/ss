@@ -23,8 +23,11 @@ export type ChatRole = 'user' | 'assistant';
  */
 export type StoredWork = {
   readonly seconds: number;
-  /** Имена позванных инструментов по порядку вызова: число считает показывающий. */
-  readonly names: readonly string[];
+  /**
+   * Имена позванных инструментов у старых записей: у новых тот же список лежит в
+   * `calls`, и второй раз он не пишется.
+   */
+  readonly names?: readonly string[];
   readonly thoughts: number;
   /** Полный список хода: имя и замысел. Идущий ход несёт его, записанный — тоже. */
   readonly calls?: readonly ToolCall[];
@@ -48,7 +51,10 @@ export type ChatMessage = {
 /** Номер реплики, которая собирается сейчас: у идущего ответа номер один и тот же. */
 export const LIVE_ID = 'live';
 
-/** Событие чата. Первые семь приходят из комнаты, последние два ставит страница. */
+/**
+ * Событие чата. Из комнаты приходят `started`, `chunk`, `live`, `thought`,
+ * `failed` и `done` (ложится в `ended`); `ask` и `asked` ставит сама страница.
+ */
 export type ChatEvent =
   | { readonly kind: 'ask'; readonly id: string; readonly text: string; readonly at: string }
   | { readonly kind: 'asked'; readonly id: string; readonly messageId: string }
@@ -77,6 +83,15 @@ const callsOfField = (value: unknown): readonly ToolCall[] => {
   return callsOf(value);
 };
 
+/** Имена из поля: поля нет или оно чужое — имени нет; испорченное имя пропускается. */
+const namesOfField = (value: unknown): readonly string[] | undefined => {
+  if (!Array.isArray(value)) return;
+  return value.flatMap((name) => {
+    if (typeof name !== 'string') return [];
+    return [name];
+  });
+};
+
 /**
  * Конец хода из поля: время — ход закрыт; поле есть, а времени нет — ход идёт;
  * поля нет вовсе — запись старая, её ход считаем закрытым.
@@ -98,15 +113,10 @@ export const workOfRaw = (raw: unknown): StoredWork | undefined => {
   const fields = work as Record<string, unknown>;
   if (typeof fields.seconds !== 'number') return;
   if (typeof fields.thoughts !== 'number') return;
-  if (!Array.isArray(fields.names)) return;
-  const names = fields.names.flatMap((name) => {
-    if (typeof name !== 'string') return [];
-    return [name];
-  });
   const calls = callsOfField(fields.calls);
   const base: StoredWork = {
     seconds: fields.seconds,
-    names,
+    names: namesOfField(fields.names),
     thoughts: fields.thoughts,
     calls,
     thinking: fields.thinking === true,

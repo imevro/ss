@@ -1,10 +1,17 @@
-// Hard canon: FP first, no mutability (engineering/dont-use-mutability.md).
+// Hard canon: FP first, no mutability (.agents/skills/fp-purity-no-mutability/SKILL.md).
 // ВНИМАНИЕ: правило НЕ подключено в biome.json — это осознанное исключение, а не
-// забытая настройка. Включение даёт 16 замечаний в уже написанном коде вне текущей
-// работы (apps/worker/src/provision.ts, packages/db/src/tenant.ts,
-// packages/log/src/line-log.ts, packages/ui/src/lib/merge-refs.ts,
-// apps/web/app/components/chat.tsx). Подключать его нужно вместе с разбором этих
-// мест — отдельной работой, а не попутно.
+// забытая настройка. Сверено 2026-10-15: включение даёт 33 замечания в десяти
+// файлах — packages/log/src/line-log.ts (8), apps/api/src/agent.ts (7),
+// apps/web/app/lib/live.ts (4), packages/db/src/tenant.ts (3),
+// apps/web/app/routes/[company]/sessions/[session]/page.tsx (3),
+// apps/web/app/components/chat.tsx (3), apps/worker/src/provision.ts (2),
+// packages/ui/src/lib/merge-refs.ts, apps/web/app/routes.test.ts,
+// apps/api/src/cloudflare.ts (по одному).
+// Это реестры соединений и счётчики кадров у потока: их ведёт один владелец,
+// а не игровое состояние. Подключать правило нужно вместе с их разбором —
+// отдельной работой, а не попутно. Число и список пересчитывать этой же
+// командой: biome check с подключённым правилом и `--max-diagnostics=1000`.
+// Без этого ключа biome обрезает список и число выходит меньше настоящего.
 //
 // Mutability hides observability: a step's outcome gets buried in a reassigned
 // `let outcome` instead of being the return value of a pure function. Banned:
@@ -27,52 +34,52 @@ or {
   $letDecl where {
     $letDecl <: JsVariableDeclaration(),
     $letDecl <: r"let[ \t][\s\S]*",
-    register_diagnostic(span=$letDecl, message="`let` забанен — мутабельность прячет observability в `let outcome`. const + чистая функция / .map/.reduce/Array.from/рекурсия (dont-use-mutability).")
+    register_diagnostic(span=$letDecl, message="`let` забанен — мутабельность прячет observability в `let outcome`. const + чистая функция / .map/.reduce/Array.from/рекурсия (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   $assign where {
     $assign <: JsAssignmentExpression(),
-    register_diagnostic(span=$assign, message="Присваивание/мутация забанены — `+=`, reassignment, `obj.x = …`, `arr[i] = …`. Строй новое значение через const + spread/.map/reduce (dont-use-mutability).")
+    register_diagnostic(span=$assign, message="Присваивание/мутация забанены — `+=`, reassignment, `obj.x = …`, `arr[i] = …`. Строй новое значение через const + spread/.map/reduce (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   $postUpd where {
     $postUpd <: JsPostUpdateExpression(),
-    register_diagnostic(span=$postUpd, message="`++`/`--` забанены — никакой мутабельности. Array.from/reduce/рекурсия (dont-use-mutability).")
+    register_diagnostic(span=$postUpd, message="`++`/`--` забанены — никакой мутабельности. Array.from/reduce/рекурсия (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   $preUpd where {
     $preUpd <: JsPreUpdateExpression(),
-    register_diagnostic(span=$preUpd, message="`++`/`--` забанены — никакой мутабельности (dont-use-mutability).")
+    register_diagnostic(span=$preUpd, message="`++`/`--` забанены — никакой мутабельности (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.push($args)` where {
-    register_diagnostic(span=$a, message="`.push()` забанен — массив иммутабелен. Строй через .map/.flatMap/spread (dont-use-mutability).")
+    register_diagnostic(span=$a, message="`.push()` забанен — массив иммутабелен. Строй через .map/.flatMap/spread (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.unshift($args)` where {
-    register_diagnostic(span=$a, message="`.unshift()` забанен — [...new, ...arr] (dont-use-mutability).")
+    register_diagnostic(span=$a, message="`.unshift()` забанен — [...new, ...arr] (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.splice($args)` where {
-    register_diagnostic(span=$a, message="`.splice()` забанен — .slice/.filter/.toSpliced (dont-use-mutability).")
+    register_diagnostic(span=$a, message="`.splice()` забанен — .slice/.filter/.toSpliced (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.fill($args)` where {
-    register_diagnostic(span=$a, message="in-place `.fill()` забанен — Array.from({length},...) (dont-use-mutability).")
+    register_diagnostic(span=$a, message="in-place `.fill()` забанен — Array.from({length},...) (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.copyWithin($args)` where {
-    register_diagnostic(span=$a, message="`.copyWithin()` забанен — иммутабельный rebuild (dont-use-mutability).")
+    register_diagnostic(span=$a, message="`.copyWithin()` забанен — иммутабельный rebuild (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.sort($args)` where {
-    register_diagnostic(span=$a, message="in-place `.sort()` забанен — .toSorted() (массив остаётся const; [...arr].sort() тоже забанен) (dont-use-mutability).")
+    register_diagnostic(span=$a, message="in-place `.sort()` забанен — .toSorted() (массив остаётся const; [...arr].sort() тоже забанен) (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.sort()` where {
-    register_diagnostic(span=$a, message="in-place `.sort()` забанен — .toSorted() ([...arr].sort() тоже забанен) (dont-use-mutability).")
+    register_diagnostic(span=$a, message="in-place `.sort()` забанен — .toSorted() ([...arr].sort() тоже забанен) (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.reverse()` where {
-    register_diagnostic(span=$a, message="in-place `.reverse()` забанен — .toReversed() ([...arr].reverse() тоже забанен) (dont-use-mutability).")
+    register_diagnostic(span=$a, message="in-place `.reverse()` забанен — .toReversed() ([...arr].reverse() тоже забанен) (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.pop()` where {
-    register_diagnostic(span=$a, message="`.pop()` забанен — .slice(0,-1) / .at(-1) (dont-use-mutability).")
+    register_diagnostic(span=$a, message="`.pop()` забанен — .slice(0,-1) / .at(-1) (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `$a.shift()` where {
-    register_diagnostic(span=$a, message="`.shift()` забанен — .slice(1) / [0] (dont-use-mutability).")
+    register_diagnostic(span=$a, message="`.shift()` забанен — .slice(1) / [0] (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   },
   `Object.assign($t, $r)` where {
     $t <: not JsObjectExpression(),
-    register_diagnostic(span=$t, message="`Object.assign(target,…)` мутирует существующий объект — используй spread {...a, ...b} (dont-use-mutability).")
+    register_diagnostic(span=$t, message="`Object.assign(target,…)` мутирует существующий объект — используй spread {...a, ...b} (.agents/skills/fp-purity-no-mutability/SKILL.md).")
   }
 }

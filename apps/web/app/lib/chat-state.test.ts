@@ -3,6 +3,9 @@
  * проходом. Проверяем то, что нельзя увидеть глазами: повтор ответа при записи
  * в базу, счёт мыслей, порядок частей.
  *
+ * Здесь нет разметки: строку работы, печать по буквам, подписку на комнату и строку
+ * ввода эта проверка не трогает — у страницы нет ни браузерной среды, ни отрисовки.
+ *
  * Запуск: bun test app/lib/chat-state.test.ts
  */
 import { describe, expect, test } from 'bun:test';
@@ -185,9 +188,33 @@ describe('сведение журнала', () => {
       ],
       [],
     );
-    const [message] = state.messages;
-    expect(message?.storedWork?.seconds).toBe(7);
-    expect(message?.storedWork?.names).toEqual(['bash', 'read']);
+    const storedWork = state.messages[0]?.storedWork;
+    if (storedWork === undefined) throw new Error('запись без хода: сырое поле не разобрано');
+    // Длительность и имена — то, чем строится строка работы после обновления страницы.
+    expect(storedWork.seconds).toBe(7);
+    expect(storedWork.names).toEqual(['bash', 'read']);
+  });
+
+  test('старая запись с одними именами даёт список вызовов: имя становится замыслом', () => {
+    // Запись собирает `workOfRaw`, и он всегда кладёт `calls` — пусть пустым. Значит
+    // разбор одних имён виден лишь там, где ход собран мимо разбора, рукой. Написать
+    // это через запись из хранилища нельзя: у неё `calls` уже есть, и он пуст.
+    expect(workOfStored({ seconds: 7, names: ['bash', 'read'], thoughts: 2 }, at(7)).calls).toEqual([
+      { name: 'bash', intent: 'bash' },
+      { name: 'read', intent: 'read' },
+    ]);
+  });
+
+  test('запись без списка вызовов и без имён даёт пустой ход, а не падение', () => {
+    // Так выглядит запись, у которой нет ни нового `calls`, ни старых `names`. Ожидание —
+    // пусто: строка работы покажет ход без инструментов. Своего значения тут нет, и это
+    // и есть проверка: у записи без обоих полей вызовов не бывает.
+    const [message] = stateOf(
+      [{ id: 'db1', role: 'assistant', text: 'ответ', sent_at: at(1), raw: { work: { seconds: 4, thoughts: 0 } } }],
+      [],
+    ).messages;
+    expect(message?.storedWork?.calls).toEqual([]);
+    expect(workOfStored({ seconds: 4, thoughts: 0 }, at(4)).calls).toEqual([]);
   });
 
   test('чужая форма записи не даёт строки', () => {
@@ -200,28 +227,33 @@ describe('сведение журнала', () => {
 
   test('запись идущего хода показывает ход идущим: конца у неё нет', () => {
     // Страницу обновили посреди хода: ход читается из записи и продолжает идти.
+    // Длительность здесь нарочно не равна времени записи: идущий ход берёт часы
+    // от записи, а не длительность.
     const work = workOfStored(
       {
-        seconds: 3,
+        seconds: 30,
         names: ['bash'],
         thoughts: 1,
         calls: [{ name: 'bash', intent: 'Смотрю файлы' }],
         thinking: true,
         endedAt: null,
       },
-      at(3),
+      at(120),
     );
     expect(work.thinking).toBe(true);
     expect(work.endedAt).toBeNull();
-    expect(work.startedAt).toBe(at(3));
+    expect(work.startedAt).toBe(at(120));
     expect(work.calls.map((call) => call.intent)).toEqual(['Смотрю файлы']);
   });
 
   test('записанный ответ показывает ход законченным: часы идут от длительности', () => {
-    const work = workOfStored({ seconds: 7, names: ['bash', 'read'], thoughts: 2 }, at(7));
+    // Длительность и время ответа нарочно разные: у записи 30 секунд, ответ пришёл
+    // на 120-й секунде — начало хода на 90-й. Будь они равны, проверка проходила бы и
+    // с перепутанной единицей измерения.
+    const work = workOfStored({ seconds: 30, names: ['bash', 'read'], thoughts: 2 }, at(120));
     expect(work.thinking).toBe(false);
-    expect(work.endedAt).toBe(at(7));
-    expect(work.startedAt).toBe(at(0));
+    expect(work.endedAt).toBe(at(120));
+    expect(work.startedAt).toBe(at(90));
     expect(work.calls.map((call) => call.name)).toEqual(['bash', 'read']);
   });
 
@@ -254,7 +286,7 @@ describe('сведение журнала', () => {
         role: 'assistant',
         text: 'Привет',
         sent_at: at(1),
-        raw: { work: { seconds: 2, names: [], thoughts: 0, calls: [], thinking: false, endedAt: null } },
+        raw: { work: { seconds: 2, thoughts: 0, calls: [], thinking: false, endedAt: null } },
       },
     ];
     const state = stateOf(
@@ -278,7 +310,7 @@ describe('сведение журнала', () => {
         role: 'assistant',
         text: 'ответ',
         sent_at: at(1),
-        raw: { work: { seconds: 3, names: [], thoughts: 0, calls: [], thinking: false, endedAt: null } },
+        raw: { work: { seconds: 3, thoughts: 0, calls: [], thinking: false, endedAt: null } },
       },
     ];
     const entries = log([
@@ -299,7 +331,7 @@ describe('сведение журнала', () => {
         role: 'assistant',
         text: 'При',
         sent_at: at(1),
-        raw: { work: { seconds: 1, names: [], thoughts: 0, calls: [], thinking: true, endedAt: null } },
+        raw: { work: { seconds: 1, thoughts: 0, calls: [], thinking: true, endedAt: null } },
       },
     ];
     const entries = log([

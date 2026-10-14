@@ -12,7 +12,7 @@
   "dependencies": {
     "@workspace/types": "workspace:*",
     "drizzle-orm": "^0.45.3",
-    "xsai": "^0.5.1",
+    "xsai": "0.5.1",
     "zod": "^4.6.5",
     "@workspace/db": "workspace:*"
   }

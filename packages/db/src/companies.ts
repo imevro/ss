@@ -5,7 +5,7 @@
  * Идентификаторы — nanoid с префиксом (см. модуль ids), поэтому колонки text:
  * форма одна на весь продукт, внешние ключи совпадают по типу.
  */
-import { boolean, index, jsonb, pgSequence, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgSequence, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import { newId } from './ids';
 
@@ -43,24 +43,38 @@ export const member = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     status: text('status').notNull().default('active'),
   },
-  (t) => [uniqueIndex('member_organization_user').on(t.organizationId, t.userId)],
+  (t) => [
+    uniqueIndex('member_organization_user').on(t.organizationId, t.userId),
+    // Список компаний человека идёт по человеку, а не по компании: без своего
+    // индекса этот вход (он же путь входа в панель) читает таблицу целиком.
+    index('member_user_status').on(t.userId, t.status),
+  ],
 );
 
 /** Приглашение. Строку письма собирает плагин; тут только запись. */
-export const invitation = pgTable('invitation', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => newId('invitation')),
-  organizationId: text('organization_id')
-    .notNull()
-    .references(() => organization.id, { onDelete: 'cascade' }),
-  email: text('email').notNull(),
-  role: text('role').notNull().default('member'),
-  status: text('status').notNull().default('pending'),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  inviterId: text('inviter_id').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const invitation = pgTable(
+  'invitation',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => newId('invitation')),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    role: text('role').notNull().default('member'),
+    status: text('status').notNull().default('pending'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    inviterId: text('inviter_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Плагин ищет приглашения по компании (`listInvitations`, `findPendingInvitations`) и по
+  // паре «компания + адрес» — это левый префикс индекса, он их закрывает. По одному адресу
+  // без компании (`listUserInvitations`, в том числе с `email` в строке запроса) индекс не
+  // работает: первый столбец в нём — компания. Путь этот серверный и редкий, отдельный
+  // индекс под него не заводим; понадобится — индекс по `email` рядом.
+  (t) => [index('invitation_org_email_status').on(t.organizationId, t.email, t.status)],
+);
 
 /** Реестр выписанных баз: единственный источник правды о том, у кого какая база. */
 export const companyDatabases = pgTable(
@@ -81,7 +95,9 @@ export const companyDatabases = pgTable(
     droppedAt: timestamp('dropped_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('company_databases_company').on(t.companyId)],
+  // Одна база на компанию. Уникальность — не удобство, а охрана: повторная выписка
+  // должна упереться в отказ, а не завести вторую запись о той же компании.
+  (t) => [uniqueIndex('company_databases_company').on(t.companyId)],
 );
 
 /** Сессия агента: связка чата с процессом gentic. Ключ сессии живёт у gentic. */
@@ -134,31 +150,3 @@ export const apps = pgTable(
   },
   (t) => [index('apps_company').on(t.companyId)],
 );
-
-/** Журнал: кто что сделал. Пишем с первого дня, даже когда читать нечем. */
-export const auditLog = pgTable(
-  'audit_log',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => newId('auditLog')),
-    companyId: text('company_id').references(() => organization.id, { onDelete: 'cascade' }),
-    actorKind: text('actor_kind').notNull().default('user'),
-    actorId: text('actor_id'),
-    action: text('action').notNull(),
-    targetType: text('target_type'),
-    targetId: text('target_id'),
-    meta: jsonb('meta').notNull().default({}),
-    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [index('audit_log_company_at').on(t.companyId, t.at)],
-);
-
-export const flags = pgTable('flags', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => newId('flag')),
-  companyId: text('company_id').notNull(),
-  key: text('key').notNull(),
-  value: boolean('value').notNull().default(false),
-});

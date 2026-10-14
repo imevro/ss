@@ -29,12 +29,7 @@ export default function Login() {
       globalThis.location.assign('/onboarding');
       return;
     }
-    const text = errorText(created.error);
-    if (text === undefined) {
-      setProblem('не вышло');
-      return;
-    }
-    setProblem(text);
+    setProblem(errorText(created.error));
   };
 
   return (

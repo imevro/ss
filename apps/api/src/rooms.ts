@@ -7,12 +7,12 @@
 
 import type { ServerWebSocket } from 'bun';
 
-import type { ClientEvent, conversationRoom, onboardingRoom } from '@workspace/types';
+import type { ClientEvent } from '@workspace/types';
 
-export type { ClientEvent };
-export type { conversationRoom, onboardingRoom };
+export type Socket = ServerWebSocket<{ readonly room: string }>;
 
-type Socket = ServerWebSocket<{ readonly room: string }>;
+/** Соединение hono приходит непрозрачным: вид его знает только комната. */
+export const asSocket = (raw: unknown): Socket => raw as Socket;
 
 /** Комнаты процесса. Изменяемая карта — это реестр соединений, а не состояние игры. */
 const rooms = new Map<string, Set<Socket>>();

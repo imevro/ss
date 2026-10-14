@@ -44,7 +44,7 @@ export type StepFinishArgs = {
    */
   readonly explanation?: string | null;
   readonly costUsd?: number | null;
-  readonly tokens?: { promptTokens: number; completionTokens: number; cachedTokens: number } | null;
+  readonly tokens?: { promptTokens: number; completionTokens: number; cachedTokens?: number } | null;
   /** Замена автоматической длительности: путь модели несёт свою долю времени. */
   readonly durationMs?: number | null;
 };
@@ -100,12 +100,6 @@ export const messageOf = (error: unknown): string => {
   return String(error);
 };
 
-const NOOP_HANDLE: StepHandle = {
-  async finish() {
-    // пусто намеренно: строки не было
-  },
-};
-
 const finishKind = (kind: StepKind | undefined): StepKind => {
   if (kind === undefined) return 'ok';
   return kind;
@@ -121,7 +115,6 @@ const finishDuration = (override: number | null | undefined, startedAtMs: number
   return Date.now() - startedAtMs;
 };
 
-/** Пустое значение неотличимо от отсутствия: в тексте журнала разницы нет. */
 /** Пустая строка и отсутствие значения одинаковы для журнала: пишем NULL. */
 const textOrNull = (value: string | null | undefined): string | null => {
   if (value === undefined || value === null || value === '') return null;
@@ -157,30 +150,29 @@ const makeFinishHandle = (id: number, startedAtMs: number): StepHandle => ({
 });
 
 export const logStep = {
-  /** Открыть шаг: строка появляется сразу, с состоянием «идёт». Работа важнее записи. */
+  /**
+   * Открыть шаг: строка появляется сразу, с состоянием «идёт». Отказ записи идёт наверх:
+   * шаг без строки неотличим от шага, которого не было, и решает это зовущий.
+   */
   async start(args: StepStartArgs): Promise<StepHandle> {
     const startedAtMs = Date.now();
-    try {
-      const rows = await db
-        .insert(ctxSteps)
-        .values({
-          runId: runIdOrAnon(args.ctx.runId),
-          companyId: args.ctx.companyId,
-          agent: args.ctx.agent,
-          model: orNull(args.ctx.model),
-          servingProvider: servingProvider(args.ctx),
-          toolName: args.toolName,
-          kind: 'running',
-          explanation: textOrNull(truncate(args.explanation, EXPLANATION_MAX_CHARS)),
-          argsPreview: textOrNull(truncate(previewColumn(args.input), PREVIEW_MAX_CHARS)),
-        })
-        .returning({ id: ctxSteps.id });
-      const row = rows[0];
-      if (row === undefined) return NOOP_HANDLE;
-      return makeFinishHandle(row.id, startedAtMs);
-    } catch (error) {
-      log.error('открытие шага не удалось', { toolName: args.toolName, error: messageOf(error) });
-      return NOOP_HANDLE;
-    }
+    const rows = await db
+      .insert(ctxSteps)
+      .values({
+        runId: runIdOrAnon(args.ctx.runId),
+        companyId: args.ctx.companyId,
+        agent: args.ctx.agent,
+        model: orNull(args.ctx.model),
+        servingProvider: servingProvider(args.ctx),
+        toolName: args.toolName,
+        kind: 'running',
+        explanation: textOrNull(truncate(args.explanation, EXPLANATION_MAX_CHARS)),
+        argsPreview: textOrNull(truncate(previewColumn(args.input), PREVIEW_MAX_CHARS)),
+      })
+      .returning({ id: ctxSteps.id });
+    const row = rows[0];
+    // Вставка одной строки пустой не бывает: пусто — это сломанная схема.
+    if (row === undefined) throw new Error('строка шага не заведена');
+    return makeFinishHandle(row.id, startedAtMs);
   },
 };

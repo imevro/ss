@@ -10,6 +10,14 @@ import postgres from 'postgres';
 
 const pools = new Map<string, Sql>();
 
+/**
+ * Имя базы компании. Оно выведено из её слага и не меняется, поэтому читаем его
+ * один раз на процесс: иначе каждое обращение к базе компании идёт со стороны
+ * ядра ещё и за именем. Компания без базы в память не ложится — база может
+ * появиться позже.
+ */
+const names = new Map<string, string>();
+
 /** Соединение живёт до конца процесса: открывать новое на каждое сообщение — тратить время. */
 const poolFor = (dbName: string, role: string, url: string): Sql => {
   const key = `${dbName}:${role}`;
@@ -21,12 +29,17 @@ const poolFor = (dbName: string, role: string, url: string): Sql => {
 };
 
 const dbNameOf = async (companyId: string): Promise<string | undefined> => {
+  const known = names.get(companyId);
+  if (known !== undefined) return known;
   const rows = await db
     .select({ dbName: companyDatabases.dbName })
     .from(companyDatabases)
     .where(eq(companyDatabases.companyId, companyId))
     .limit(1);
-  return rows[0]?.dbName;
+  const name = rows[0]?.dbName;
+  if (name === undefined) return;
+  names.set(companyId, name);
+  return name;
 };
 
 /**
@@ -56,3 +69,7 @@ export const platformSql = async (companyId: string): Promise<Sql | undefined> =
   if (dbName === undefined) return;
   return poolFor(dbName, 'platform', urlFor(coreUrl, dbName, undefined));
 };
+
+/** Тип запроса драйвера: наружу отдаём его под своим именем, чтобы приложениям не
+ *  заводить зависимость от drizzle напрямую. */
+export type { Sql };

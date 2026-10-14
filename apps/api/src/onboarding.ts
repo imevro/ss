@@ -19,7 +19,7 @@ import { describeRoute, resolver } from 'hono-openapi';
 import { z } from 'zod';
 
 import { auth } from './auth';
-import { companiesOf, createCompany, databaseOf, findCompany } from './companies';
+import { createCompany, databaseOf, findCompany, isMemberOf } from './companies';
 import {
   answerBodySchema,
   channelSchema,
@@ -46,9 +46,15 @@ onboarding.get(
         'Вопросы и мессенджеры.',
         z.object({ steps: z.array(stepSchema), channels: z.array(channelSchema) }),
       ),
+      401: unauthorized,
     },
   }),
-  (c) => c.json({ steps: ONBOARDING_STEPS, channels: CHANNELS }),
+  async (c) => {
+    // Шаги видит только вошедший: онбординг — часть входа, а не витрина.
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
+    return c.json({ steps: ONBOARDING_STEPS, channels: CHANNELS });
+  },
 );
 
 /** Что человек уже прошёл. Страница продолжает с этого места, а не с начала. */
@@ -126,8 +132,13 @@ onboarding.post(
     const saved = await savedOnboarding(session.user.id);
     if (saved.answers.business === '') return problem(c, 400, 'bad_request', 'не описано, чем занимается компания');
 
-    // Сбор идёт в очереди: человек не ждёт модель в открытом запросе.
-    const jobId = await enqueue('onboarding:proposal', { userId: session.user.id, business: saved.answers.business });
+    // Сбор идёт в очереди: человек не ждёт модель в открытом запросе. Ключ задачи —
+    // человек: пока предложение собирается, второе такое же нажатие новой задачи не заводит.
+    const jobId = await enqueue(
+      'onboarding:proposal',
+      { userId: session.user.id },
+      `onboarding:proposal:${session.user.id}`,
+    );
     return c.json({ jobId }, 202);
   },
 );
@@ -186,14 +197,13 @@ onboarding.post(
 
     const companyId = c.req.param('id');
     // База выписывается только своей компании: чужой номер сюда не проходит.
-    const mine = await companiesOf(session.user.id);
-    if (!mine.some((company) => company.id === companyId)) return problem(c, 403, 'forbidden', 'чужая компания');
+    if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
     // Компания есть — иначе это чужой номер. База уже выписана — повтор не нужен:
     // сама запись о базе появляется только после работы воркера.
     if ((await findCompany(companyId)) === undefined) return problem(c, 404, 'not_found', 'компании нет');
     if ((await databaseOf(companyId)) !== undefined) return problem(c, 409, 'conflict', 'база уже выписана');
 
-    const jobId = await enqueue('db:provision', { companyId });
+    const jobId = await enqueue('db:provision', { companyId }, `db:provision:${companyId}`);
     return c.json({ jobId }, 202);
   },
 );

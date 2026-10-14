@@ -28,8 +28,5 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ],
-  "dependencies": {
-    "motion": "^13.5.0"
-  }
+  ]
 }

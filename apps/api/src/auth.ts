@@ -84,6 +84,10 @@ export const auth = betterAuth({
   secret: config.authSecret,
   baseURL: config.authUrl,
   trustedOrigins: config.webOrigins,
+  // Ручки плагина ключей наружу не отдаём. Через них вошедший человек сам себе выписал бы
+  // ключ и вписал бы в метаданные чужую компанию — а метаданные и решают, чьи ресурсы
+  // откроет ключ. Наш путь выдачи зовёт плагин напрямую, и сюда не ходит.
+  disabledPaths: ['/api-key/create', '/api-key/list', '/api-key/get', '/api-key/update', '/api-key/delete'],
   emailAndPassword: { enabled: true },
   socialProviders,
   // Ключи доступа к Cloudflare: строка ключа с нашим началом, метаданные с компанией.

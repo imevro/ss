@@ -12,7 +12,7 @@ import { companyDatabases, db, member, organization } from '@workspace/db';
 import { createLogger, messageOf } from '@workspace/log';
 import type { Result } from '@workspace/types';
 import { err, ok } from '@workspace/types';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import { auth } from './auth';
 
@@ -67,7 +67,7 @@ const inviteTo = async (organizationId: string, email: string, headers: Headers)
   try {
     await auth.api.createInvitation({ body: { email, role: 'member', organizationId }, headers });
   } catch (error) {
-    log.warn('приглашение не создано', { organizationId, email, error: messageOf(error) });
+    log.error('приглашение не создано', { organizationId, email, error: messageOf(error) });
   }
 };
 
@@ -85,7 +85,26 @@ export const companiesOf = async (userId: string): Promise<readonly Company[]> =
     .where(and(eq(member.userId, userId), eq(member.status, 'active')))
     .then((rows) => rows.map((row) => row.company));
 
+/**
+ * Членство: номер компании принадлежит человеку? Один запрос вместо чтения всех компаний
+ * с последующим перебором — так спрашивают все маршруты с номером компании в адресе.
+ */
+export const isMemberOf = async (userId: string, companyId: string): Promise<boolean> =>
+  db
+    .select({ id: member.id })
+    .from(member)
+    .where(and(eq(member.userId, userId), eq(member.organizationId, companyId), eq(member.status, 'active')))
+    .limit(1)
+    .then((rows) => rows.length > 0);
+
 export const databaseOf = async (companyId: string): Promise<CompanyDatabase | undefined> => {
   const rows = await db.select().from(companyDatabases).where(eq(companyDatabases.companyId, companyId)).limit(1);
   return rows[0];
+};
+
+/** Базы перечисленных компаний одним запросом: список компаний не должен ждать по запросу на каждую. */
+export const databasesOf = async (companyIds: readonly string[]): Promise<ReadonlyMap<string, CompanyDatabase>> => {
+  if (companyIds.length === 0) return new Map();
+  const rows = await db.select().from(companyDatabases).where(inArray(companyDatabases.companyId, companyIds));
+  return new Map(rows.map((row) => [row.companyId, row]));
 };

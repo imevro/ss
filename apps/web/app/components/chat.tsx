@@ -69,12 +69,19 @@ const modeOf = (printing: boolean): 'streaming' | 'static' => {
 const TypedMarkdown = ({ text, typing }: { readonly text: string; readonly typing: boolean }) => {
   const handle = useRef(0);
   const total = text.length;
-  // Ответ на вопрос «меньше движения» даёт готовая ловушка движения: на сервере она
-  // отвечает «нет», в браузере перечитывает настройку — разметка не расходится.
   const still = useReducedMotion();
-  const instant = still === true;
-  const [shown, setShown] = useState(() => shownAtStart(typing, instant, total));
+  /**
+   * Печать без движения: решается в браузере, но не на первой отрисовке. На сервере
+   * настройку не спросить, и там «нет», так что спрашиваем её эффектом — иначе
+   * сервер и браузер показали бы разное, и разметка разошлась бы при оживлении.
+   */
+  const [instant, setInstant] = useState(false);
+  const [shown, setShown] = useState(() => shownAtStart(typing, false, total));
   const shownRef = useRef(shown);
+
+  useEffect(() => {
+    setInstant(still === true);
+  }, [still]);
 
   useEffect(() => {
     if (!typing || instant) return;
@@ -110,6 +117,18 @@ const visibleOf = (printing: boolean, shown: number, total: number): number => {
   return total;
 };
 
+/** Состояние работы для показа: идёт — «working», стоит — «complete». */
+const statusOf = (working: boolean): 'working' | 'complete' => {
+  if (working) return 'working';
+  return 'complete';
+};
+
+/** Имя реплики для чтения вслух: по ролям, по-русски. */
+const labelOf = (from: Turn['from']): string => {
+  if (from === 'user') return 'Вопрос человека';
+  return 'Ответ агента';
+};
+
 /** Лента переписки. Последнее сообщение всегда видно: лента сама держится низа. */
 export const ChatThread = ({
   turns,
@@ -122,7 +141,7 @@ export const ChatThread = ({
   <Thread className="no-scrollbar min-h-0 flex-1">
     <ThreadContent className={contentClassName}>
       {turns.map((turn) => (
-        <Message key={turn.id} from={turn.from}>
+        <Message key={turn.id} from={turn.from} aria-label={labelOf(turn.from)}>
           <MessageStack>
             <MessageContent>
               {turn.workLine !== undefined && <WorkLine work={turn.workLine} className="mb-1" />}
@@ -138,7 +157,7 @@ export const ChatThread = ({
               {turn.work !== undefined && (
                 <AgentActivity
                   items={[...turn.work.items]}
-                  status={turn.work.working ? 'working' : 'complete'}
+                  status={statusOf(turn.work.working)}
                   contentType="step"
                   className="pt-1"
                 />
@@ -165,7 +184,7 @@ export const ChatComposer = ({
   readonly placeholder: string;
   readonly busy: boolean;
   /** Вопросы, ждущие хода агента. В ленте их нет: они ещё не отправлены. */
-  readonly queued?: readonly string[];
+  readonly queued?: readonly Queued[];
   readonly onSend: (text: string) => Promise<void>;
   /** Пустой Enter пускает верхний вопрос очереди сейчас. */
   readonly onFlush?: (() => void) | undefined;
@@ -216,13 +235,16 @@ export const ChatComposer = ({
   );
 };
 
+/** Вопрос, ждущий хода агента, со своим именем. Одинаковые вопросы различимы: имя своё. */
+export type Queued = { readonly id: string; readonly text: string };
+
 /** Вопросы, ждущие хода агента: человек их написал, но агент их ещё не получил. */
-const QueuedQuestions = ({ items }: { readonly items: readonly string[] }) => (
+const QueuedQuestions = ({ items }: { readonly items: readonly Queued[] }) => (
   <div className="mb-2 px-3 text-muted-foreground">
     <ol className="flex flex-col gap-1">
-      {items.map((text) => (
-        <li key={text} className="truncate">
-          {text}
+      {items.map((item) => (
+        <li key={item.id} className="truncate">
+          {item.text}
         </li>
       ))}
     </ol>

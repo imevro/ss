@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 import { runTurn, stopTurn } from './agent';
 import { auth } from './auth';
-import { companiesOf, databaseOf, findCompany } from './companies';
+import { companiesOf, databasesOf, findCompany, isMemberOf } from './companies';
 import {
   companySchema,
   conversationSchema,
@@ -24,7 +24,7 @@ import {
   textBodySchema,
   writtenSchema,
 } from './contracts';
-import { badRequest, bodyOf, conflict, forbidden, jsonResponse, notFound, unauthorized } from './docs';
+import { badRequest, bodyOf, conflict, forbidden, isoOf, jsonResponse, notFound, unauthorized } from './docs';
 import { problem } from './problem';
 
 const log = createLogger('conversations');
@@ -51,7 +51,7 @@ conversations.get(
     if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
 
     const companyId = c.req.param('id');
-    if (!(await mine(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
+    if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
 
     const sql = await platformSql(companyId);
     if (sql === undefined) return problem(c, 409, 'conflict', 'у компании нет базы');
@@ -63,7 +63,7 @@ conversations.get(
       ORDER BY c.last_message_at DESC
       LIMIT 100
     `;
-    return c.json({ conversations: rows });
+    return c.json({ conversations: rows.map((row) => ({ ...row, last_message_at: isoOf(row.last_message_at) })) });
   },
 );
 
@@ -77,6 +77,8 @@ conversations.get(
       200: jsonResponse('Сообщения по возрастанию времени.', z.object({ messages: z.array(messageSchema) })),
       401: unauthorized,
       403: forbidden,
+      404: notFound,
+      409: conflict,
     },
   }),
   async (c) => {
@@ -84,10 +86,14 @@ conversations.get(
     if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
 
     const companyId = c.req.param('id');
-    if (!(await mine(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
+    if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
 
     const sql = await platformSql(companyId);
     if (sql === undefined) return problem(c, 409, 'conflict', 'у компании нет базы');
+
+    const conversationId = c.req.param('conversationId');
+    const found = await sql<{ id: string }[]>`SELECT id FROM ctx.conversations WHERE id = ${conversationId}`;
+    if (found.length === 0) return problem(c, 404, 'not_found', 'чата нет');
 
     // Сырое поле отдаём разбору на странице: там из него берётся ход работы.
     const rows = await sql<
@@ -95,11 +101,11 @@ conversations.get(
     >`
       SELECT id, role, author_name, text, sent_at::text, raw
       FROM ctx.messages
-      WHERE conversation_id = ${c.req.param('conversationId')}
+      WHERE conversation_id = ${conversationId}
       ORDER BY sent_at ASC
       LIMIT 500
     `;
-    return c.json({ messages: rows });
+    return c.json({ messages: rows.map((row) => ({ ...row, sent_at: isoOf(row.sent_at) })) });
   },
 );
 
@@ -131,7 +137,7 @@ conversations.post(
     if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
 
     const companyId = c.req.param('id');
-    if (!(await mine(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
+    if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
 
     const body = await bodyOf(c);
     if (body === undefined) return problem(c, 400, 'bad_request', 'не понимаю запрос');
@@ -184,13 +190,12 @@ conversations.get(
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
     const list = await companiesOf(session.user.id);
-    const withDatabase = await Promise.all(
-      list.map(async (company) => {
-        const database = await databaseOf(company.id);
-        if (database === undefined) return { ...company, database: 'нет' };
-        return { ...company, database: database.status };
-      }),
-    );
+    const databases = await databasesOf(list.map((company) => company.id));
+    const withDatabase = list.map((company) => {
+      const database = databases.get(company.id);
+      if (database === undefined) return { ...company, database: 'нет' };
+      return { ...company, database: database.status };
+    });
     return c.json({ companies: withDatabase });
   },
 );
@@ -219,7 +224,7 @@ conversations.post(
     if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
 
     const companyId = c.req.param('id');
-    if (!(await mine(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
+    if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
 
     const body = await bodyOf(c);
     if (body === undefined) return problem(c, 400, 'bad_request', 'не понимаю запрос');
@@ -236,8 +241,8 @@ conversations.post(
     if (company === undefined) return problem(c, 404, 'not_found', 'компании нет');
 
     await sql`
-      INSERT INTO ctx.conversations (id, source, external_id, title, agent)
-      VALUES (${conversationId}, ${'agent'}, ${conversationId}, ${company.name}, ${'company'})
+      INSERT INTO ctx.conversations (id, source, title)
+      VALUES (${conversationId}, ${'agent'}, ${company.name})
     `;
     const messageId = newId('message');
     await sql`
@@ -269,20 +274,16 @@ conversations.get(
     if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
 
     const companyId = c.req.param('id');
-    if (!(await mine(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
+    if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
 
     const rows = await db
       .select({ id: apps.id, name: apps.name, url: apps.url })
       .from(apps)
-      .where(eq(apps.companyId, companyId));
+      .where(eq(apps.companyId, companyId))
+      .limit(100);
     return c.json({ apps: rows });
   },
 );
-
-const mine = async (userId: string, companyId: string): Promise<boolean> => {
-  const list = await companiesOf(userId);
-  return list.some((company) => company.id === companyId);
-};
 
 const textOf = (body: unknown): string | undefined => {
   if (typeof body !== 'object' || body === null) return;

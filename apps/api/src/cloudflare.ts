@@ -17,8 +17,8 @@ import { describeRoute, resolver } from 'hono-openapi';
 import { z } from 'zod';
 
 import { auth } from './auth';
-import { companiesOf } from './companies';
-import { issuedKeySchema, keyBodySchema, keySchema } from './contracts';
+import { isMemberOf } from './companies';
+import { AREAS, issuedKeySchema, keyBodySchema, keySchema, MAX_DAYS } from './contracts';
 import { badRequest, bodyOf, forbidden, jsonResponse, unauthorized } from './docs';
 import { config } from './env';
 import { problem } from './problem';
@@ -27,9 +27,6 @@ const log = createLogger('cloudflare');
 
 export const cloudflareRoutes = new Hono();
 
-/** Что разрешено ключу компании, если в метаданных не сказано иного. */
-const AREAS = ['workers', 'durable_objects', 'd1'] as const;
-
 /** Наш адрес входа и путь до платформы: дальше путь такой же, как у Cloudflare. */
 const PATH_PREFIX = '/v1/cloudflare';
 const CLOUDFLARE_API = 'https://api.cloudflare.com/client/v4';
@@ -37,8 +34,10 @@ const CLOUDFLARE_API = 'https://api.cloudflare.com/client/v4';
 /** Сколько ждём платформу. Выкладка бота занимает секунды; запас на медленную сеть. */
 const DEADLINE_MS = 300_000;
 
+/** Сколько ждём ответ «чья это база» при разборе номера. Это проверка, а не работа. */
+const PROBE_MS = 15_000;
+
 const DAY_SECONDS = 86_400;
-const MAX_DAYS = 365;
 
 /**
  * Что чем открывается. Путь у платформы один и тот же у неё и у нас: начало пути — семья
@@ -96,14 +95,17 @@ const metadataOf = (raw: string | null): Record<string, unknown> => {
   return parsed as Record<string, unknown>;
 };
 
-/** Области из метаданных: пусто или мусор — берём умолчание. */
+/** Известная ли это область: имя области берётся только из закрытого списка. */
+const isArea = (item: unknown): item is string =>
+  typeof item === 'string' && (AREAS as readonly string[]).includes(item);
+
+/**
+ * Области из метаданных ключа. Ключ без читаемых областей не берём: строку ключа можно
+ * испортить, и испорченная строка не должна давать прав — ни одной области.
+ */
 const areasOfMeta = (value: unknown): readonly string[] => {
-  if (!Array.isArray(value)) return AREAS;
-  const names = value.filter(
-    (item): item is string => typeof item === 'string' && (AREAS as readonly string[]).includes(item),
-  );
-  if (names.length === 0) return AREAS;
-  return names;
+  if (!Array.isArray(value)) return [];
+  return value.filter(isArea);
 };
 
 const factsOf = (metadata: unknown): KeyFacts | undefined => {
@@ -120,7 +122,7 @@ const factsOf = (metadata: unknown): KeyFacts | undefined => {
  */
 const keyOf = (c: Context): string | undefined => {
   const own = c.req.header('x-ss-token');
-  if (own !== undefined && own !== '') return own;
+  if (own?.startsWith('ss_cf_')) return own;
 
   const header = c.req.header('authorization');
   if (header === undefined) return;
@@ -131,16 +133,36 @@ const keyOf = (c: Context): string | undefined => {
   return value;
 };
 
-/** Проверка ключа кланкера. Не подошёл — пусто: наружу это один и тот же отказ. */
-const verifiedKeyOf = async (key: string): Promise<KeyFacts | undefined> => {
-  try {
-    const answer = await auth.api.verifyApiKey({ body: { key } });
-    const record = answer.key;
-    if (record === null) return;
-    return factsOf(record.metadata);
-  } catch (error) {
-    log.warn('ключ не прошёл проверку', { reason: reasonOf(error) });
+/** Что вышло из проверки ключа: свои данные, чужой ключ или беда на нашей стороне. */
+type KeyCheck =
+  | { readonly ok: true; readonly facts: KeyFacts }
+  | { readonly ok: false; readonly why: 'no_key' | 'platform' };
+
+/**
+ * Проверка ключа кланкера. Чужой ключ и наша поломка — разные исходы: молчание базы
+ * не должно выглядеть как отказ в доступе. Членство проверяем тут же: человек, вышедший
+ * из компании, теряет доступ сразу, а не через год, когда истечёт ключ.
+ */
+const verifiedKeyOf = async (key: string): Promise<KeyCheck> => {
+  const answer = await auth.api.verifyApiKey({ body: { key } }).catch((error: unknown): undefined => {
+    log.error('проверка ключа не удалась', { reason: reasonOf(error) });
+  });
+  if (answer === undefined) return { ok: false, why: 'platform' };
+
+  const record = answer.key;
+  if (record === null) return { ok: false, why: 'no_key' };
+  const facts = factsOf(record.metadata);
+  if (facts === undefined) return { ok: false, why: 'no_key' };
+
+  const member = await isMemberOf(record.referenceId, facts.companyId).catch((error: unknown): undefined => {
+    log.error('членство не проверено', { reason: reasonOf(error) });
+  });
+  if (member === undefined) return { ok: false, why: 'platform' };
+  if (!member) {
+    log.warn('ключ без члена компании', { companyId: facts.companyId, keyId: record.id });
+    return { ok: false, why: 'no_key' };
   }
+  return { ok: true, facts };
 };
 
 /** Член компании. Отвечает номером компании или готовым отказом. */
@@ -151,8 +173,7 @@ const companyOfMember = async (c: Context): Promise<Response | string> => {
   const companyId = c.req.param('id');
   if (companyId === undefined) return problem(c, 400, 'bad_request', 'не указана компания');
 
-  const list = await companiesOf(session.user.id);
-  if (!list.some((company) => company.id === companyId)) return problem(c, 403, 'forbidden', 'чужая компания');
+  if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
   return companyId;
 };
 
@@ -170,9 +191,7 @@ const areasOfBody = (body: Record<string, unknown>): string[] | undefined => {
   const value = body.areas;
   if (value === undefined) return [...AREAS];
   if (!Array.isArray(value) || value.length === 0) return;
-  const names = value.filter(
-    (item): item is string => typeof item === 'string' && (AREAS as readonly string[]).includes(item),
-  );
+  const names = value.filter(isArea);
   if (names.length !== value.length) return;
   return names;
 };
@@ -249,11 +268,41 @@ const namelessPlan = async (c: Context, tail: string, scope: string): Promise<Re
   return { tail, body: raw };
 };
 
-/** Ресурс по имени в пути: имя обязано быть своим, номер — только там, где он есть у платформы. */
-const namedPlan = (c: Context, base: string, tail: string, name: string, scope: string): Response | Plan => {
+/**
+ * Номер ресурса сам по себе не пропуск. Платформа адресует базы и пространства номером,
+ * и имя видно только у неё: спрашиваем имя у платформы и сверяем его с началом имени
+ * компании. Чужой номер остаётся чужим, каким бы путём его ни назвали. Ответ платформы
+ * наружу не уходит — мы смотрим его и отвечаем отказом.
+ */
+const numberedIsOwn = async (base: string, name: string, scope: string): Promise<boolean> => {
+  const answer = await fetch(`${CLOUDFLARE_API}/accounts/${config.cloudflareAccount}/${base}/${name}`, {
+    headers: { authorization: `Bearer ${config.cloudflareToken}` },
+    signal: AbortSignal.timeout(PROBE_MS),
+  }).catch((): undefined => undefined);
+  if (answer === undefined || !answer.ok) return false;
+  const body = parsedJson(await answer.text());
+  if (typeof body !== 'object' || body === null) return false;
+  const result = (body as Record<string, unknown>).result;
+  if (typeof result !== 'object' || result === null) return false;
+  const own = (result as Record<string, unknown>).name;
+  if (typeof own !== 'string') return false;
+  return own.startsWith(scope);
+};
+
+/** Ресурс по имени в пути: своё имя — пропуск, чужой номер — отказ, свой номер — проверка. */
+const namedPlan = async (
+  c: Context,
+  base: string,
+  tail: string,
+  name: string,
+  scope: string,
+): Promise<Response | Plan> => {
   if (name.startsWith(scope)) return { tail };
-  if (BY_NUMBER.includes(base) && isNumber(name)) return { tail };
-  return problem(c, 403, 'forbidden', `чужое имя: твоё начинается с ${scope}`);
+  if (!(BY_NUMBER.includes(base) && isNumber(name))) {
+    return problem(c, 403, 'forbidden', `чужое имя: твоё начинается с ${scope}`);
+  }
+  if (await numberedIsOwn(base, name, scope)) return { tail };
+  return problem(c, 403, 'forbidden', `чужая база: твоё начинается с ${scope}`);
 };
 
 /**
@@ -285,7 +334,7 @@ const planOf = async (c: Context, facts: KeyFacts, scope: string): Promise<Respo
 
   const name = after.split('/')[1];
   if (name === undefined) return await namelessPlan(c, tail, scope);
-  return namedPlan(c, here.base, tail, name, scope);
+  return await namedPlan(c, here.base, tail, name, scope);
 };
 
 /** Тело запроса к платформе: прочитанное имя — как есть, остальное — потоком. */
@@ -368,11 +417,13 @@ cloudflareRoutes.get(
         enabled: apiKeys.enabled,
         createdAt: apiKeys.createdAt,
         lastRequest: apiKeys.lastRequest,
+        expiresAt: apiKeys.expiresAt,
         metadata: apiKeys.metadata,
       })
       .from(apiKeys)
       .where(sql`${apiKeys.metadata}::jsonb ->> 'companyId' = ${who}`)
-      .orderBy(desc(apiKeys.createdAt));
+      .orderBy(desc(apiKeys.createdAt))
+      .limit(100);
 
     return c.json({
       keys: rows.map((row) => ({
@@ -383,6 +434,7 @@ cloudflareRoutes.get(
         enabled: row.enabled,
         createdAt: row.createdAt.toISOString(),
         lastRequest: isoOf(row.lastRequest),
+        expiresAt: isoOf(row.expiresAt),
       })),
     });
   },
@@ -456,13 +508,17 @@ const proxy = async (c: Context) => {
   const key = keyOf(c);
   if (key === undefined) return problem(c, 403, 'forbidden', 'чужой ключ');
 
-  const facts = await verifiedKeyOf(key);
-  if (facts === undefined) return problem(c, 403, 'forbidden', 'чужой ключ');
+  const checked = await verifiedKeyOf(key);
+  if (!checked.ok) {
+    // Молчание базы — наша беда, а не отказ в доступе: кланкер должен повторить, а не гадать.
+    if (checked.why === 'platform') return problem(c, 502, 'unavailable', 'проверка ключа не удалась');
+    return problem(c, 403, 'forbidden', 'чужой ключ');
+  }
 
   // Номер компании — префиксный наноид вида `comp_…`; из него выходит начало имени.
   // Регистр опускаем: имена воркеров и баз у Cloudflare только строчные.
-  const scope = `${facts.companyId.replace('_', '-').toLowerCase()}-`;
-  const decided = await planOf(c, facts, scope);
+  const scope = `${checked.facts.companyId.replace('_', '-').toLowerCase()}-`;
+  const decided = await planOf(c, checked.facts, scope);
   if (decided instanceof Response) return decided;
 
   const search = new URL(c.req.url).search;

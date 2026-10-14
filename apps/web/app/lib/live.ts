@@ -76,9 +76,18 @@ const roomUrl = (room: string): string => {
   return `ws://${globalThis.location.host}/v1/rooms/${encodeURIComponent(room)}`;
 };
 
+/** Сколько ждём до следующего захода в комнату: с каждой неудачей вдвое дольше, но не больше минуты. */
+const RETRY_MS = 2000;
+const RETRY_MAX_MS = 60_000;
+
+const retryDelay = (attempt: number): number => Math.min(RETRY_MS * 2 ** attempt, RETRY_MAX_MS);
+
 /**
  * Подписка на комнату. Разбор события — на стороне страницы: комната передаёт
  * то, что ей сказали, и ничего не решает.
+ *
+ * Комната закрывается сама: сеть, сон машины, перезапуск API. Страница возвращается
+ * в неё сама — иначе она нема до перезагрузки, а кадры потока терять нельзя.
  */
 export const useLiveRoom = (room: string | null, onEvent: (event: ClientEvent) => void): void => {
   const handler = useRef(onEvent);
@@ -89,13 +98,34 @@ export const useLiveRoom = (room: string | null, onEvent: (event: ClientEvent) =
 
   useEffect(() => {
     if (room === null || room === '') return;
+    const url = roomUrl(room);
+    /** Соединение и ждущий повтор: их закрывает уборка эффекта. */
+    const holder: { socket: WebSocket | undefined; timer: ReturnType<typeof setTimeout> | undefined; done: boolean } = {
+      socket: undefined,
+      timer: undefined,
+      done: false,
+    };
+
+    const open = (attempt: number): void => {
+      const socket = new WebSocket(url);
+      holder.socket = socket;
+      socket.addEventListener('message', (message: MessageEvent<string>) => {
+        const event = eventOf(message.data);
+        if (event === undefined) return;
+        handler.current(event);
+      });
+      socket.addEventListener('close', () => {
+        if (holder.done) return;
+        holder.timer = setTimeout(() => open(attempt + 1), retryDelay(attempt));
+      });
+    };
+
     // Соединение открываем сразу: оно дёшево, а пропущенный первый кадр — нет.
-    const socket = new WebSocket(roomUrl(room));
-    socket.addEventListener('message', (message: MessageEvent<string>) => {
-      const event = eventOf(message.data);
-      if (event === undefined) return;
-      handler.current(event);
-    });
-    return () => socket.close();
+    open(0);
+    return () => {
+      holder.done = true;
+      clearTimeout(holder.timer);
+      holder.socket?.close();
+    };
   }, [room]);
 };

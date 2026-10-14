@@ -7,8 +7,9 @@
  * хранится в реестре: у одного чата один ключ, у разных — разные.
  */
 import { chatTitle } from '@workspace/companies';
+import type { Sql } from '@workspace/db';
 import { agentSessions, db, newId, platformSql } from '@workspace/db';
-import { createLogger } from '@workspace/log';
+import { createLogger, logStep } from '@workspace/log';
 import type { StoredWork, ToolCall } from '@workspace/types';
 import { conversationRoom } from '@workspace/types';
 import { and, eq, sql } from 'drizzle-orm';
@@ -81,6 +82,12 @@ const parseJson = (raw: string): unknown => {
 const DEADLINE_MS = 600_000;
 
 /**
+ * Поток в ключе комнаты агента. Ключ — `-<число>:<поток>`
+ * (`.agents/memory/agents/ref-gentic-room-protocol.md`); у нас один поток на чат.
+ */
+const GENTIC_STREAM = 0;
+
+/**
  * Ключ комнаты агента. Агент принимает только `-<число>:<поток>`. Номер берём из
  * последовательности: она выдаёт его одним действием, и два одновременных чата
  * не получают один номер. Повтор вставки — это гонка двух запросов на одну чат:
@@ -100,7 +107,7 @@ const genticKeyOf = async (companyId: string, conversationId: string): Promise<s
   // Последовательность без строки — это не «нет номера», а сломанная схема.
   // Молча подставить единицу значило бы выдать чужой ключ.
   if (first === undefined) throw new Error('последовательность номеров не ответила');
-  const key = `-${first.number}:0`;
+  const key = `-${first.number}:${GENTIC_STREAM}`;
   const written = await db
     .insert(agentSessions)
     .values({ id: newId('agentSession'), companyId, conversationId, genticKey: key })
@@ -126,6 +133,8 @@ type Answer = {
   readonly messageId: string | undefined;
   readonly startedAt: number;
   readonly state: TurnState;
+  /** Легли ли шаги записи. Не легли — ход нельзя объявлять удавшимся: в ленте его нет. */
+  readonly stored: boolean;
 };
 
 /** Состояние хода на сейчас: текст, позванные инструменты, мысли. */
@@ -139,19 +148,25 @@ type TurnState = {
 /** Сколько кусков копим между записями: чаще — лишние записи, реже — больше терять. */
 const WRITE_EVERY_CHUNKS = 25;
 
+/** База компании по её номеру. Базы нет — это не «нечего писать», а поломка схемы. */
+const tenantOf = async (companyId: string): Promise<Sql> => {
+  const tenant = await platformSql(companyId);
+  if (tenant === undefined) throw new Error(`у компании ${companyId} нет базы: писать некуда`);
+  return tenant;
+};
+
 /**
  * Запись ответа заводится с началом хода и обновляется по ходу. Поэтому у хода есть
  * место в ленте с первой секунды, а страница, обновлённая посреди хода, читает его из
  * базы: второй правды на стороне браузера нет.
  */
 const openTurn = async (companyId: string, conversationId: string, messageId: string): Promise<void> => {
-  const tenant = await platformSql(companyId);
-  if (tenant === undefined) return;
+  const tenant = await tenantOf(companyId);
   // Начало хода кладём сразу: даже обновление в первую секунду показывает, что ход идёт.
-  const work: StoredWork = { seconds: 0, names: [], thoughts: 0, calls: [], thinking: true, endedAt: null };
+  const work: StoredWork = { seconds: 0, thoughts: 0, calls: [], thinking: true, endedAt: null };
   await tenant`
-    INSERT INTO ctx.messages (id, conversation_id, role, author_name, text, raw)
-    VALUES (${messageId}, ${conversationId}, ${'assistant'}, ${'агент'}, ${''}, ${rawOf(work)}::text::jsonb)
+    INSERT INTO ctx.messages (id, conversation_id, role, text, raw)
+    VALUES (${messageId}, ${conversationId}, ${'assistant'}, ${''}, ${rawOf(work)}::text::jsonb)
   `;
 };
 
@@ -182,12 +197,10 @@ const writeTurn = async (
   state: TurnState,
   ended: boolean,
 ): Promise<void> => {
-  const tenant = await platformSql(companyId);
-  if (tenant === undefined) return;
+  const tenant = await tenantOf(companyId);
   const work: StoredWork = {
     // Работа была, раз ответ пришёл: показываем хотя бы секунду, а не «0s».
     seconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
-    names: state.calls.map((call) => call.name),
     thoughts: state.thoughts,
     calls: state.calls,
     thinking: thinkingOf(ended, state.thinking),
@@ -202,8 +215,7 @@ const writeTurn = async (
 
 /** Ход без ответа: пустая запись в ленте не нужна — убираем её. */
 const dropTurn = async (companyId: string, messageId: string): Promise<void> => {
-  const tenant = await platformSql(companyId);
-  if (tenant === undefined) return;
+  const tenant = await tenantOf(companyId);
   await tenant`DELETE FROM ctx.messages WHERE id = ${messageId}`;
 };
 
@@ -212,7 +224,7 @@ const dropTurn = async (companyId: string, messageId: string): Promise<void> => 
  * нужна комнате, запись — ленте. Куски уходят в комнату и в запись вместе.
  */
 export const askAgent = async (companyId: string, conversationId: string, question: string): Promise<Answer> => {
-  const empty: Answer = { text: '', messageId: undefined, startedAt: Date.now(), state: emptyState() };
+  const empty: Answer = { text: '', messageId: undefined, startedAt: Date.now(), state: emptyState(), stored: false };
   if (config.agentUrl === '') return empty;
   // Название придумывается рядом с ходом и уходит в комнату само: человек видит
   // вопрос, а список чатов тем временем получает имя. Ход названия не ждёт.
@@ -243,6 +255,8 @@ export const askAgent = async (companyId: string, conversationId: string, questi
   const thoughts: number[] = [];
   const written: number[] = [];
   const writes: Promise<void>[] = [];
+  /** Отказы записи. Копится отдельно: `allSettled` исхода не различает. */
+  const failed: number[] = [];
 
   const stateOf = (): TurnState => ({
     text: parts.join(''),
@@ -259,6 +273,7 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     writes.push(
       step.catch((error: unknown) => {
         log.error('шаг хода не записан', { companyId, messageId, error: String(error) });
+        failed.push(1);
       }),
     );
   };
@@ -273,7 +288,13 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     running.delete(lane);
     socket.close();
     // Закрытые соединения больше не пишут: очередь обрывается на том, что успело лечь.
-    waiter.resolve({ text: final, messageId, startedAt, state: { ...stateOf(), text: final } });
+    waiter.resolve({
+      text: final,
+      messageId,
+      startedAt,
+      state: { ...stateOf(), text: final },
+      stored: false,
+    });
   };
 
   // Срок общий на ответ: сработает один раз, а повторное закрытие соединения безвредно.
@@ -334,7 +355,7 @@ export const askAgent = async (companyId: string, conversationId: string, questi
   const answer = await waiter.promise;
   // Конец хода ложится последним: сперва то, что уже в пути, потом итог.
   await Promise.allSettled(writes);
-  return answer;
+  return { ...answer, stored: failed.length === 0 };
 };
 
 /**
@@ -346,23 +367,29 @@ const nameChat = async (companyId: string, conversationId: string, question: str
   try {
     const tenant = await platformSql(companyId);
     if (tenant === undefined) return;
+    // Шаг открываем до обращения: строка есть, пока модель думает. Расход ложится в неё.
+    const step = await logStep.start({
+      ctx: { runId: conversationId, companyId, agent: 'agent:title', model: config.llmModel },
+      toolName: 'model:chat-title',
+      explanation: 'придумываю название чата',
+      input: { question },
+    });
     const titled = await chatTitle(question, {
       baseURL: config.llmBaseUrl,
       apiKey: config.llmApiKey,
       model: config.llmModel,
     });
     if (!titled.ok) {
+      await step.finish({ output: titled.error, kind: 'error' });
       log.info('название чата не придумано', { companyId, conversationId, reason: titled.error.kind });
       return;
     }
+    const title = titled.value.answer.title;
+    await step.finish({ output: { title }, tokens: titled.value.usage });
     await tenant`
-      UPDATE ctx.conversations SET title = ${titled.value.title} WHERE id = ${conversationId}
+      UPDATE ctx.conversations SET title = ${title} WHERE id = ${conversationId}
     `;
-    say(conversationRoom(conversationId), {
-      kind: 'titled',
-      conversationId,
-      title: titled.value.title,
-    });
+    say(conversationRoom(conversationId), { kind: 'titled', conversationId, title });
   } catch (error) {
     log.error('название чата не записано', { companyId, conversationId, error: String(error) });
   }
@@ -445,6 +472,12 @@ const turnOf = async (companyId: string, conversationId: string, question: strin
       say(room, { kind: 'failed', conversationId, reason: 'агент не ответил' });
       return;
     }
+    // Запись хода не легла — в ленте его нет, значит ход не состоялся: объявлять его
+    // удавшимся значило бы соврать странице, которая обновится и ничего не найдёт.
+    if (!answer.stored) {
+      say(room, { kind: 'failed', conversationId, reason: 'ответ агента не записан' });
+      return;
+    }
     await writeTurn(companyId, answer.messageId, answer.startedAt, answer.state, true);
     await touchConversation(companyId, conversationId);
     log.info('ответ агента записан', { companyId, conversationId, length: answer.text.length });
@@ -458,8 +491,7 @@ const turnOf = async (companyId: string, conversationId: string, question: strin
 
 /** Список чатов замечает ход по времени последней записи. */
 const touchConversation = async (companyId: string, conversationId: string): Promise<void> => {
-  const tenant = await platformSql(companyId);
-  if (tenant === undefined) return;
+  const tenant = await tenantOf(companyId);
   await tenant`
     UPDATE ctx.conversations SET last_message_at = now() WHERE id = ${conversationId}
   `;

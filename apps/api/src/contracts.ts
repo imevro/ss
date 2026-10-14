@@ -103,23 +103,43 @@ export const miniAppSchema = z.object({
   url: z.string().nullable().meta({ description: 'Адрес на спрайте; до сборки — пусто.' }),
 });
 
-/** Кадр из комнаты живого потока. Вид выбирает `kind`. */
-export const clientEventSchema = z.object({
-  kind: z
-    .enum(['proposal', 'started', 'chunk', 'titled', 'live', 'thought', 'done', 'failed', 'problem'])
-    .meta({ description: 'Вид события.' }),
-  proposal: z.unknown().optional(),
-  conversationId: z.string().optional(),
-  text: z.string().optional(),
-  /** Название чата: приходит из задачи, которая его придумала. */
-  title: z.string().optional(),
-  reason: z.string().optional(),
-  calls: z
-    .array(z.object({ name: z.string(), intent: z.string() }))
-    .optional()
-    .meta({ description: 'Позванные инструменты: весь список хода, не прибавка.' }),
-  thinking: z.boolean().optional().meta({ description: 'Сейчас думает сам агент.' }),
-});
+/** Позванный инструмент: имя и замысел. Вид один с показывающим. */
+const toolCallSchema = z.object({ name: z.string(), intent: z.string() });
+
+/**
+ * Кадр из комнаты живого потока. Вид выбирает `kind`, и у каждого вида свои поля:
+ * разбор обязан дать ровно тот вид, что объявлен у клиента. Кадр без поля — это
+ * не «пусто», а испорченный кадр: его отбрасываем, а не подставляем пустое.
+ */
+export const clientEventSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('proposal'), proposal: z.unknown() }),
+  z.object({
+    kind: z.literal('started'),
+    conversationId: z.string(),
+    messageId: z.string().optional().meta({ description: 'Номер записи ответа.' }),
+  }),
+  z.object({ kind: z.literal('chunk'), conversationId: z.string(), text: z.string() }),
+  z.object({
+    kind: z.literal('titled'),
+    conversationId: z.string(),
+    /** Название чата: приходит из задачи, которая его придумала. */
+    title: z.string(),
+  }),
+  z.object({
+    kind: z.literal('live'),
+    conversationId: z.string(),
+    calls: z.array(toolCallSchema).meta({ description: 'Позванные инструменты: весь список хода, не прибавка.' }),
+    thinking: z.boolean().meta({ description: 'Сейчас думает сам агент.' }),
+  }),
+  z.object({ kind: z.literal('thought'), conversationId: z.string() }),
+  z.object({
+    kind: z.literal('done'),
+    conversationId: z.string(),
+    messageId: z.string().optional().meta({ description: 'Номер записи ответа.' }),
+  }),
+  z.object({ kind: z.literal('failed'), conversationId: z.string(), reason: z.string() }),
+  z.object({ kind: z.literal('problem'), reason: z.string() }),
+]);
 
 export const answerBodySchema = z.object({
   step: z.enum(['company', 'business', 'invites', 'channels']).meta({ description: 'Имя шага.' }),
@@ -158,14 +178,19 @@ export const okSchema = z.object({ ok: z.boolean() });
  * Область платформы Cloudflare, которую видит кланкер. Список закрыт и расширяется
  * одной строкой; отказ перечисляет его целиком, поэтому кланкер не гадает.
  */
+export const AREAS = ['workers', 'durable_objects', 'd1'] as const;
+
+/** Предел срока жизни ключа в днях: тот же предел у проверки тела, что и у описания. */
+export const MAX_DAYS = 365;
+
 export const areaSchema = z
-  .enum(['workers', 'durable_objects', 'd1'])
+  .enum(AREAS)
   .meta({ description: 'Область платформы: код бота, хранилище сообщений, база.' });
 
 /** Заказ ключа доступа к платформе. */
 export const keyBodySchema = z.object({
   name: z.string().min(1).meta({ description: 'Имя ключа для человека.' }),
-  days: z.number().int().min(1).max(365).optional().meta({ description: 'Срок жизни, дней. По умолчанию 365.' }),
+  days: z.number().int().min(1).max(MAX_DAYS).optional().meta({ description: 'Срок жизни, дней. По умолчанию 365.' }),
   areas: z.array(areaSchema).min(1).optional().meta({ description: 'Области платформы. По умолчанию все три.' }),
 });
 
@@ -178,6 +203,7 @@ export const keySchema = z.object({
   enabled: z.boolean(),
   createdAt: z.string().meta({ description: 'Когда выдан, ISO.' }),
   lastRequest: z.string().nullable().meta({ description: 'Последнее обращение, ISO.' }),
+  expiresAt: z.string().nullable().meta({ description: 'До какого времени ключ годен, ISO. Пусто — бессрочный.' }),
 });
 
 /** Выданный ключ: строка приходит один раз, при выдаче. */

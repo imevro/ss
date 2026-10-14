@@ -5,6 +5,7 @@ import { onboardingRoom } from '@workspace/types';
 import type { AgentActivityItem } from '@workspace/ui/components/agents/agent-activity';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
+import type { QuestionSubmissionAnswer, QuestionsSubmission } from '@workspace/ui/components/nexus-ui/questions';
 import {
   Question,
   QuestionOption,
@@ -85,6 +86,8 @@ const workItems = (): readonly AgentActivityItem[] => [
 export async function loader({ request }: Route.LoaderArgs) {
   const origin = new URL(request.url).origin;
   const headers = serverHeaders(request);
+  // Кто вошёл, спрашиваем первым: список шагов тоже требует входа, и отказ на входе —
+  // это увод на экран входа, а не ошибка страницы.
   const me = await fetch(`${origin}/v1/me`, { headers });
   if (me.status === 401) throw redirect('/login');
   const who = (await me.json()) as { user: { id: string } };
@@ -118,6 +121,18 @@ const answerText = (answers: Answers, step: Step, channels: readonly Channel[]):
     .map((id) => channelLabel(channels, id))
     .filter((name) => name !== '')
     .join(', ');
+};
+
+/** Ответы одного вопроса анкеты: у списка — выбранные, у одиночного выбора — ничего. */
+const pickedOf = (item: QuestionsSubmission[number]): readonly QuestionSubmissionAnswer[] => {
+  if (item.type === 'multiple') return item.answer;
+  return [];
+};
+
+/** Пропуск шага: обязательный шаг пропустить нельзя — обработчика нет. */
+const skipOf = (required: boolean, skip: () => void): (() => void) | undefined => {
+  if (required) return;
+  return skip;
 };
 
 /**
@@ -300,7 +315,7 @@ export default function Onboarding({ loaderData }: Route.ComponentProps) {
             ]}
             onSubmit={(submission) => {
               const picked = submission
-                .flatMap((item) => (item.type === 'multiple' ? item.answer : []))
+                .flatMap((item) => pickedOf(item))
                 .map((answer) => String(answer.value))
                 .filter((value) => value !== '');
               if (picked.length === 0) return;
@@ -335,7 +350,7 @@ export default function Onboarding({ loaderData }: Route.ComponentProps) {
             placeholder={asked.hint}
             busy={false}
             onSend={send}
-            onSkip={asked.required ? undefined : () => void send('')}
+            onSkip={skipOf(asked.required, () => void send(''))}
           />
         </div>
       )}

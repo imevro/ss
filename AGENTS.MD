@@ -1,7 +1,7 @@
 # Working notes
 
 This file is loaded automatically at the start of every session. It is yours to
-edit — the introduction block below is a placeholder until you fill it in.
+edit.
 
 ## Acknowledge the task first
 
@@ -92,13 +92,13 @@ term of art is a cost they did not agree to pay.
 
 ## Skills
 
-`.agents/skills/` holds the tools for this workspace: a web search, a page
-reader, and a speech-to-text. Each skill is a `SKILL.md` file. It tells you how
-to call the tool, what comes back, what it costs, and what a failure means. Read
-the skill that matches the job before you use anything else, and follow it
-exactly. The commands in it are the whole interface. If the tool is not
-installed in this workspace, install what the skill tells you to install, then
-continue. Do not invent another path around it.
+`.agents/skills/` holds this workspace's skills — engineering, design, release.
+Each skill is a `SKILL.md` file. It tells you when the skill applies, what to
+run, what comes back, and what a failure means. Read the skill that matches the
+job before you use anything else, and follow it exactly. The commands in it are
+the whole interface. If the tool is not installed in this workspace, install
+what the skill tells you to install, then continue. Do not invent another path
+around it.
 
 The person you work for can run any of these from Telegram with `/skill:<name>`.
 A skill whose name is lowercase letters, digits and underscores, no longer than

@@ -5,12 +5,12 @@
  * Состояние одно на процесс и задаётся при запуске. Настройки журнала читает
  * запуск приложения, а не этот модуль: тут только значения по умолчанию.
  */
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-export const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
 export type LogData = Record<string, unknown>;
 
@@ -41,13 +41,19 @@ export type LoggerOptions = {
 };
 
 /** Единственная изменяемая точка: настройка процесса, заполняется один раз. */
-const state: { dir?: string; level: LogLevel; console: boolean; run?: string } = {
+const state: { dir?: string; dirReady: boolean; level: LogLevel; console: boolean; run?: string; warned: boolean } = {
   level: 'info',
   console: true,
+  dirReady: false,
+  warned: false,
 };
 
 export const configureLogger = (options: LoggerOptions): void => {
-  if (options.dir !== undefined) state.dir = options.dir;
+  if (options.dir !== undefined && options.dir !== state.dir) {
+    state.dir = options.dir;
+    state.dirReady = false;
+    state.warned = false;
+  }
   if (options.level !== undefined) state.level = options.level;
   if (options.console !== undefined) state.console = options.console;
   if (options.run !== undefined) state.run = options.run;
@@ -74,16 +80,55 @@ export const dirOption = (dir: string | undefined): { dir?: string } => {
   return { dir };
 };
 
-const todayFile = (): string => `${new Date().toISOString().slice(0, 10)}.jsonl`;
+const LEVELS_LIST: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
-/** Запись в файл не должна ронять работу: любая беда с диском остаётся бедой диска. */
+/** Уровень из настройки: чужое имя — отказ запуска, а не тихий запасной путь. */
+const levelOf = (value: string): LogLevel => {
+  const found = LEVELS_LIST.find((level) => level === value);
+  if (found === undefined) throw new Error(`LOG_LEVEL=${value} не понимаю`);
+  return found;
+};
+
+/** Значение настройки журнала: пустое или отсутствующее — значение по умолчанию. */
+const envValue = (name: string, fallback: string): string => {
+  const value = process.env[name];
+  if (value === undefined || value === '') return fallback;
+  return value;
+};
+
+/**
+ * Настройка журнала из среды. Читается один раз при запуске — дальше модули о среде
+ * не знают. Журнал знает только про себя: настройки приложения (база, ключи) живут
+ * в `env.ts` приложения.
+ */
+export const setupLogging = (): void => {
+  configureLogger({
+    level: levelOf(envValue('LOG_LEVEL', 'info')),
+    console: envValue('LOG_CONSOLE', 'true') === 'true',
+    ...dirOption(process.env.LOG_DIR),
+  });
+};
+
+/**
+ * Запись в файл не должна ронять работу: любая беда с диском остаётся бедой диска.
+ * Каталог заводим один раз — за жизнь процесса он не меняется. Имя файла берём из
+ * самой записи: её время уже посчитано, второй раз его считать нечего.
+ *
+ * Молчать об отказе тоже нельзя: потерянный журнал тогда выглядит как тишина, а не
+ * как поломка. Говорим в stderr — один раз на каталог, чтобы не залить поток.
+ */
 const writeEntry = (entry: LogEntry): void => {
   if (state.dir === undefined) return;
   try {
-    if (!existsSync(state.dir)) mkdirSync(state.dir, { recursive: true });
-    appendFileSync(join(state.dir, todayFile()), `${JSON.stringify(entry)}\n`);
-  } catch {
-    // молча: журнал не важнее работы
+    if (!state.dirReady) {
+      mkdirSync(state.dir, { recursive: true });
+      state.dirReady = true;
+    }
+    appendFileSync(join(state.dir, `${entry.ts.slice(0, 10)}.jsonl`), `${JSON.stringify(entry)}\n`);
+  } catch (error) {
+    if (state.warned) return;
+    state.warned = true;
+    process.stderr.write(`журнал в ${state.dir} не пишется: ${String(error)}\n`);
   }
 };
 
@@ -115,10 +160,3 @@ export const createLogger = (module: string): Logger => ({
   warn: (msg, data?) => emit('warn', module, msg, data),
   error: (msg, data?) => emit('error', module, msg, data),
 });
-
-/** Урезать длинный текст до одной строки: поля журнала остаются читаемыми. */
-export const truncate = (text: string, max = 120): string => {
-  const oneLine = text.replace(/\n/g, '\\n');
-  if (oneLine.length <= max) return oneLine;
-  return `${oneLine.slice(0, max)}…`;
-};

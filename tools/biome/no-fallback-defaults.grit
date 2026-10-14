@@ -1,4 +1,4 @@
-// Hard canon: no fallback defaults (engineering/dont-hide-errors-with-fallbacks.md).
+// Hard canon: no fallback defaults (.agents/skills/fp-purity-fail-loud-no-fallbacks/SKILL.md).
 // `??` is intrinsically a coalesce-fallback — it substitutes a value for a missing one
 // and so hides a contract break. There is NO legitimate fallback: fail loud, or branch
 // explicitly with if / early-return. `||` with a literal/absence RHS (`|| 0`, `|| []`,
@@ -7,8 +7,7 @@
 //
 // JSX conditional rendering — `{left ?? <Empty/>}` — is idiomatic React and stays allowed,
 // so coalescing inside a JSX expression container is excluded (same carve-out as no-ternary,
-// via the named matcher JsxExpressionChild(), NOT `within {$_}` — see
-// engineering/gotcha-grit-brace-within-too-broad.md).
+// via the named matcher JsxExpressionChild(), NOT `within {$_}` — `within` is too broad here).
 //
 // Two patterns share one file via a top-level `or {}` — GritQL allows a single top-level
 // pattern per plugin file, so sibling rules must be unioned, not listed.
@@ -17,7 +16,7 @@ language js
 or {
   `$x ?? $y` where {
     $x <: not within JsxExpressionChild() ,
-    register_diagnostic(span=$y, message="`??` забанен — коалесинг прячет контракт-брейк; дай упасть громко или явный if/guard (dont-hide-errors-with-fallbacks).")
+    register_diagnostic(span=$y, message="`??` забанен — коалесинг прячет контракт-брейк; дай упасть громко или явный if/guard (.agents/skills/fp-purity-fail-loud-no-fallbacks/SKILL.md).")
   },
   `$x || $rhs` where {
     $rhs <: or {
@@ -29,6 +28,6 @@ or {
       JsNullLiteralExpression()
     },
     $rhs <: not within JsxExpressionChild() ,
-    register_diagnostic(span=$rhs, message="`|| <литерал>` забанен — fallback-дефолт прячет контракт-брейк; дай упасть громко или явный if/guard (dont-hide-errors-with-fallbacks).")
+    register_diagnostic(span=$rhs, message="`|| <литерал>` забанен — fallback-дефолт прячет контракт-брейк; дай упасть громко или явный if/guard (.agents/skills/fp-purity-fail-loud-no-fallbacks/SKILL.md).")
   }
 }

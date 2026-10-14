@@ -158,9 +158,8 @@
     width: 1rem;
     margin-right: 1.25rem;
     text-align: right;
-    color: #737373;
+    color: var(--muted-foreground);
     padding-left: 0;
-    font-size: 14px;
   }
   code .line {
     padding-left: 0px !important;

@@ -3,29 +3,18 @@
  * Обязательная настройка без значения — это отказ запуска, а не тихий запасной путь.
  */
 
-import type { LogLevel } from '@workspace/log';
-import { configureLogger, dirOption } from '@workspace/log';
-
 /** Обязательная настройка. Нет значения — падаем на старте, а не посреди работы. */
-export const required = (name: string): string => {
+const required = (name: string): string => {
   const value = process.env[name];
   if (value === undefined || value === '') throw new Error(`настройка ${name} не задана`);
   return value;
 };
 
 /** Настройка, у которой есть осмысленное значение по умолчанию. */
-export const optional = (name: string, fallback: string): string => {
+const optional = (name: string, fallback: string): string => {
   const value = process.env[name];
   if (value === undefined || value === '') return fallback;
   return value;
-};
-
-const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
-
-const levelOr = (value: string): LogLevel => {
-  const found = LOG_LEVELS.find((level) => level === value);
-  if (found === undefined) throw new Error(`LOG_LEVEL=${value} не понимаю`);
-  return found;
 };
 
 /**
@@ -61,13 +50,3 @@ export const config = {
   agentUrl: agentUrlOf(optional('AGENT_URL', '')),
   agentSecret: optional('AGENT_SECRET', ''),
 } as const;
-
-/** Настройки журнала читаем на старте: дальше модули о среде не знают. */
-export const setupLogging = (): void => {
-  const dir = process.env.LOG_DIR;
-  configureLogger({
-    level: levelOr(optional('LOG_LEVEL', 'info')),
-    console: optional('LOG_CONSOLE', 'true') === 'true',
-    ...dirOption(dir),
-  });
-};

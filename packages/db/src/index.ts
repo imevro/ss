@@ -14,7 +14,5 @@ export * from './tenant';
 const url = process.env.DATABASE_URL;
 if (url === undefined) throw new Error('DATABASE_URL не задан');
 
-export const sql = postgres(url, { prepare: false, max: 10 });
+const sql = postgres(url, { prepare: false, max: 10 });
 export const db = drizzle(sql, { casing: 'snake_case' });
-
-export type Db = typeof db;

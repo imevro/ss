@@ -25,6 +25,12 @@ export const jsonResponse = (description: string, schema: z.ZodType) => ({
   content: { 'application/json': { schema: resolver(schema) } },
 });
 
+/**
+ * Время наружу. База отдаёт его строкой со пробелом вместо «T», а в договоре у нас
+ * ISO: приводим на выходе, чтобы читателю не приходилось угадывать разбор.
+ */
+export const isoOf = (at: string): string => new Date(at).toISOString();
+
 export const unauthorized = problemResponse('Нужен вход.');
 export const forbidden = problemResponse('Нет доступа к чужой компании.');
 export const notFound = problemResponse('Записи нет.');
@@ -33,10 +39,12 @@ export const conflict = problemResponse('Сейчас так нельзя: на�
 
 /**
  * Тело запроса как запись. Не разобранное тело — это отказ клиента, а не сбой
- * сервера: без этой проверки разбор падает и наружу уходит 500.
+ * сервера: без этой проверки разбор падает и наружу уходит 500. Нечитаемое тело
+ * (слишком большое) — тот же отказ клиента, а не беда сервера.
  */
 export const bodyOf = async (c: Context): Promise<Record<string, unknown> | undefined> => {
-  const raw = await c.req.text();
+  const raw = await c.req.text().catch((): undefined => undefined);
+  if (raw === undefined) return;
   const parsed: unknown = parseJson(raw);
   if (typeof parsed !== 'object' || parsed === null) return;
   return parsed as Record<string, unknown>;

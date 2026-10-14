@@ -1,4 +1,4 @@
-import { LayoutGridIcon, Message01Icon, SlackIcon, TelegramIcon, WhatsappIcon } from '@hugeicons/core-free-icons';
+import { LayoutGridIcon, Message01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { ClientEvent } from '@workspace/types';
 import { conversationRoom, workOfRaw } from '@workspace/types';
@@ -21,7 +21,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, redirect, useNavigate, useParams } from 'react-router';
 
 import type { Route } from './+types/page';
-import type { Turn } from '@/components/chat';
+import type { Queued, Turn } from '@/components/chat';
 import { ChatComposer, ChatThread } from '@/components/chat';
 import { sessionAddress, shortId } from '@/lib/address';
 import { api, reasonOf, serverHeaders } from '@/lib/api';
@@ -31,7 +31,17 @@ import { workOfStored } from '@/lib/chat-state';
 import { useLiveRoom } from '@/lib/live';
 import { noindexMeta } from '@/lib/page-title';
 
-export const meta = () => noindexMeta(['Чаты'], 'Чаты с агентом компании.');
+/** Имя окна — имя открытого: чат, миниапп или список. Та же `titleOf`, что и в шапке. */
+export const meta = ({ loaderData, params }: Route.MetaArgs) =>
+  noindexMeta(
+    [
+      titleOf(
+        loaderData.conversations.find((chat) => shortId(chat.id) === params.session),
+        loaderData.apps.find((app) => shortId(app.id) === params.session),
+      ),
+    ],
+    'Чаты с агентом компании.',
+  );
 
 type Conversation = {
   readonly id: string;
@@ -43,18 +53,11 @@ type Conversation = {
 
 type MiniApp = { readonly id: string; readonly name: string; readonly url: string | null };
 
-const ICONS: Readonly<Record<string, typeof Message01Icon>> = {
-  telegram: TelegramIcon,
-  slack: SlackIcon,
-  whatsapp: WhatsappIcon,
-  agent: Message01Icon,
-};
-
-const SourceIcon = ({ source }: { readonly source: string }) => {
-  const icon = ICONS[source];
-  if (icon === undefined) return <HugeiconsIcon icon={Message01Icon} className="size-4 shrink-0" />;
-  return <HugeiconsIcon icon={icon} className="size-4 shrink-0" />;
-};
+/**
+ * Значок источника чата. Источник в 0.1 один — агент, и другого не выписывает никто;
+ * телеграмные значки вернутся вместе с приёмом из телеграма.
+ */
+const SourceIcon = () => <HugeiconsIcon icon={Message01Icon} className="size-4 shrink-0" />;
 
 /** Время сообщения в понятном виде: сегодня — часы и минуты, раньше — дата. */
 const clock = (iso: string): string => {
@@ -76,6 +79,29 @@ const openIdOf = (chat: Conversation | undefined, app: MiniApp | undefined): str
 };
 
 /**
+ * Ждущий вопрос со своим именем. Вопросы ставят по одному, поэтому времени достаточно:
+ * два в одну миллисекунду не поставить.
+ */
+const queuedOf = (text: string): Queued => ({ id: String(Date.now()), text });
+
+/** Номер вопроса до его записи: свой, временный. Оба пути ставят его одинаково. */
+const pendingId = (): string => `me-${Date.now()}`;
+
+/**
+ * Свёрнута ли боковая панель. Панель кладёт выбор в cookie, а выбор надо ещё и
+ * прочитать: иначе он теряется при каждом обновлении страницы.
+ */
+const SIDEBAR_COOKIE = 'sidebar_state';
+
+const sidebarOpenOf = (request: Request): boolean => {
+  const header = request.headers.get('cookie');
+  if (header === null) return true;
+  const pair = header.split(';').find((one) => one.trim().startsWith(`${SIDEBAR_COOKIE}=`));
+  if (pair === undefined) return true;
+  return pair.trim().slice(SIDEBAR_COOKIE.length + 1) === 'true';
+};
+
+/**
  * Данные экрана приходят с сервера: список чатов, миниаппы и лента открытого чата.
  * Первый же ответ содержит готовую картинку, поэтому пустое окно не мигает.
  */
@@ -84,26 +110,34 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const headers = serverHeaders(request);
   const { company: slug, session } = params;
 
+  // Кто вошёл, спрашиваем первым: без входа остальное не спрашивают, а отказ на
+  // входе — это увод на экран входа, а не ошибка страницы.
   const me = await fetch(`${origin}/v1/me`, { headers });
   if (me.status === 401) throw redirect('/login');
 
-  // Компанию в адресе зовут слагом, а база знает её под номером: номер берём из списка.
   const companies = await api<{ companies: readonly Company[] }>(`${origin}/v1/companies`, { headers });
+
+  // Компанию в адресе зовут слагом, а база знает её под номером: номер берём из списка.
   const company = companies.companies.find((one) => one.slug === slug);
   if (company === undefined) throw new Response('нет такой компании', { status: 404 });
 
-  const conversations = await api<{ conversations: readonly Conversation[] }>(
-    `${origin}/v1/companies/${company.id}/conversations`,
-    {
+  const [conversations, apps] = await Promise.all([
+    api<{ conversations: readonly Conversation[] }>(`${origin}/v1/companies/${company.id}/conversations`, {
       headers,
-    },
-  );
-  const apps = await api<{ apps: readonly MiniApp[] }>(`${origin}/v1/companies/${company.id}/apps`, { headers });
+    }),
+    api<{ apps: readonly MiniApp[] }>(`${origin}/v1/companies/${company.id}/apps`, { headers }),
+  ]);
 
   // Что открыто, решает один номер: он есть и у разговора, и у миниаппа.
   const chat = conversations.conversations.find((one) => shortId(one.id) === session);
   const messages = await messagesOf(origin, headers, company.id, chat?.id);
-  return { company, conversations: conversations.conversations, apps: apps.apps, messages };
+  return {
+    company,
+    conversations: conversations.conversations,
+    apps: apps.apps,
+    messages,
+    sidebarOpen: sidebarOpenOf(request),
+  };
 }
 
 /** Лента открытого разговора. Разговор не открыт — ленты нет. */
@@ -128,6 +162,15 @@ export default function Company({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<readonly Conversation[]>(loaderData.conversations);
   const [messages, setMessages] = useState<readonly StoredRow[]>(loaderData.messages);
+  /**
+   * Отметка: с какой лентой загрузчика сверена показанная. Сверяем в отрисовке, а не
+   * эффектом: эффект идёт после показа, и лента прошлого чата успела бы мелькнуть.
+   */
+  const [loadedFrom, setLoadedFrom] = useState(loaderData.messages);
+  if (loadedFrom !== loaderData.messages) {
+    setLoadedFrom(loaderData.messages);
+    setMessages(loaderData.messages);
+  }
   /** Запись вопроса идёт, а ход ещё не начался: очередь ждёт начала, а не ответа. */
   const [awaiting, setAwaiting] = useState(false);
   /** Новый чат заводится. */
@@ -143,7 +186,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
    * Вопросы, ждущие хода агента: в ленте их нет — они ещё не отправлены. Очередь
    * принадлежит чату: открыли другой — вызывать в нём чужой вопрос нечего.
    */
-  const [queue, setQueue] = useState<{ readonly chat: string | undefined; readonly items: readonly string[] }>({
+  const [queue, setQueue] = useState<{ readonly chat: string | undefined; readonly items: readonly Queued[] }>({
     chat: openId,
     items: [],
   });
@@ -162,11 +205,6 @@ export default function Company({ loaderData }: Route.ComponentProps) {
   const working = live || recorded;
   /** Агент занят: очередь ждёт, пока он освободится. */
   const busy = working || awaiting || starting;
-
-  // Открыли другой чат — готовые реплики приходят от загрузчика, журнал свой.
-  useEffect(() => {
-    setMessages(loaderData.messages);
-  }, [loaderData.messages]);
 
   /** Лента открытого чата приходит целиком: готовые реплики впереди переигранных. */
   const reloadMessages = useCallback(async (): Promise<void> => {
@@ -223,7 +261,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
       setConversations((current) => [created.conversation, ...current]);
       setMessages([
         {
-          id: 'local',
+          id: pendingId(),
           role: 'user',
           text,
           sent_at: new Date().toISOString(),
@@ -247,7 +285,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
       setProblem('');
       try {
         // Вопрос пишем в журнал сразу, с временным номером: он виден, пока идёт запись.
-        const temporary = `me-${Date.now()}`;
+        const temporary = pendingId();
         append({ kind: 'ask', id: temporary, text, at: new Date().toISOString() });
         const written = await api<{ readonly messageId: string }>(
           `/v1/companies/${companyId}/conversations/${encodeURIComponent(openId)}/messages`,
@@ -285,13 +323,13 @@ export default function Company({ loaderData }: Route.ComponentProps) {
     if (head === undefined) return;
     releasing.current = true;
     setQueue((current) => ({ ...current, items: current.items.slice(1) }));
-    void release(head, false);
+    void release(head.text, false);
   }, [busy, queue, release]);
 
   /** Вопрос человека: агент занят — вопрос ждёт в очереди, иначе уходит сейчас. */
   const ask = async (text: string): Promise<void> => {
     if (busy) {
-      setQueue((current) => ({ ...current, items: [...current.items, text] }));
+      setQueue((current) => ({ ...current, items: [...current.items, queuedOf(text)] }));
       return;
     }
     await writeToChat(text, false);
@@ -303,7 +341,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
     if (head === undefined || releasing.current) return;
     releasing.current = true;
     setQueue((current) => ({ ...current, items: current.items.slice(1) }));
-    void release(head, true);
+    void release(head.text, true);
   };
 
   const turns: readonly Turn[] = turnsOf(log.state.messages, log.state.work);
@@ -314,7 +352,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
   return (
     // Высота окна закреплена: лента прокручивается сама, а строка ввода стоит
     // на месте. Без этого окно росло бы вместе с лентой и уносило строку вниз.
-    <SidebarProvider className="h-svh overflow-hidden">
+    <SidebarProvider className="h-svh overflow-hidden" defaultOpen={loaderData.sidebarOpen}>
       <Sidebar>
         <SidebarHeader>
           <Link to="/" className="px-2 py-1 font-heading font-medium">
@@ -354,7 +392,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
                       isActive={conversation.id === openId}
                       render={<Link to={sessionAddress(slug, conversation.id)} />}
                     >
-                      <SourceIcon source={conversation.source} />
+                      <SourceIcon />
                       <span className="truncate">{conversation.title}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -368,7 +406,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
       <SidebarInset className="flex min-h-0 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-3 border-border border-b px-4">
           <SidebarTrigger />
-          <SourceIcon source={sourceOf(activeConversation)} />
+          <SourceIcon />
           <span className="truncate font-medium">{title}</span>
         </header>
 
@@ -471,11 +509,6 @@ const eventOfRoom = (event: ClientEvent): ChatEvent => {
 const roomOf = (conversationId: string | undefined): string | null => {
   if (conversationId === undefined) return null;
   return conversationRoom(conversationId);
-};
-
-const sourceOf = (conversation: Conversation | undefined): string => {
-  if (conversation === undefined) return 'agent';
-  return conversation.source;
 };
 
 const titleOf = (conversation: Conversation | undefined, app: MiniApp | undefined): string => {

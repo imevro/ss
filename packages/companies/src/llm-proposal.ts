@@ -6,14 +6,8 @@ import type { Result } from '@workspace/types';
 
 import type { CompanyProposal } from './proposal';
 import { companyProposalSchema } from './proposal';
-import type { SgrError } from './sgr';
+import type { LlmConfig, SgrAnswer, SgrError } from './sgr';
 import { sgr } from './sgr';
-
-export type ProposalConfig = {
-  readonly baseURL: string;
-  readonly apiKey: string;
-  readonly model: string;
-};
 
 const SYSTEM = [
   'Ты помогаешь завести базу данных небольшой компании.',
@@ -24,7 +18,10 @@ const SYSTEM = [
   'Типы столбцов выбирай из: text, number, money, date, bool, ref.',
 ].join('\n');
 
-export const companyProposal = (business: string, config: ProposalConfig): Promise<Result<CompanyProposal, SgrError>> =>
+export const companyProposal = (
+  business: string,
+  config: LlmConfig,
+): Promise<Result<SgrAnswer<CompanyProposal>, SgrError>> =>
   sgr({
     schema: companyProposalSchema,
     system: SYSTEM,

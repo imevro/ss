@@ -5,8 +5,8 @@
  */
 import { customAlphabet } from 'nanoid';
 
-export const ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-export const ID_LENGTH = 20;
+const ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const ID_LENGTH = 20;
 
 export type IdKind =
   | 'organization'
@@ -15,8 +15,6 @@ export type IdKind =
   | 'companyDatabase'
   | 'agentSession'
   | 'app'
-  | 'auditLog'
-  | 'flag'
   | 'user'
   | 'session'
   | 'account'
@@ -34,8 +32,6 @@ const PREFIX: Record<IdKind, string> = {
   companyDatabase: 'cdb',
   agentSession: 'asess',
   app: 'app',
-  auditLog: 'alog',
-  flag: 'flag',
   user: 'usr',
   session: 'sess',
   account: 'acct',

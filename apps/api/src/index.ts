@@ -2,7 +2,7 @@
  * Наш API. Онбординг, вход, живые комнаты, данные для панели.
  * Единственный процесс, который слушает порт и держит комнаты живого потока.
  */
-import { createLogger } from '@workspace/log';
+import { createLogger, setupLogging } from '@workspace/log';
 import { Hono } from 'hono';
 import { describeRoute, openAPIRouteHandler } from 'hono-openapi';
 import { z } from 'zod';
@@ -12,13 +12,16 @@ import { cloudflareRoutes } from './cloudflare';
 import { okSchema, userSchema } from './contracts';
 import { conversations } from './conversations';
 import { docsPage, documentOf, jsonResponse, unauthorized } from './docs';
-import { config, setupLogging } from './env';
+import { config } from './env';
 import { liveRoutes, websocket } from './live';
 import { onboarding } from './onboarding';
 import { problem } from './problem';
 
 setupLogging();
 const log = createLogger('api');
+
+/** Потолок тела запроса: выкладка воркера несёт код, но не сотни мегабайт. */
+const MAX_BODY_BYTES = 32 * 1024 * 1024;
 
 const app = new Hono();
 
@@ -69,6 +72,9 @@ app.get('/docs', docsPage);
 const server = Bun.serve({
   port: config.port,
   hostname: '0.0.0.0',
+  // Потолок тела запроса: выкладка бота несёт код, но не сотни мегабайт. Выше потолка
+  // тело не читается, и просящий получает отказ, а процесс не буферизует его целиком.
+  maxRequestBodySize: MAX_BODY_BYTES,
   fetch: app.fetch,
   // Комнаты живого потока: соединение занимает сокет, а не запрос.
   websocket,

@@ -1,4 +1,4 @@
-// Hard style law: no ternary operators in logic (engineering/dont-use-ternaries.md).
+// Hard style law: no ternary operators in logic (.agents/skills/fp-purity-no-ternaries/SKILL.md).
 // JSX conditional rendering — `{cond ? <A/> : <B/>}` — is idiomatic React and stays
 // allowed, so ternaries inside a JSX expression container are excluded.
 language js

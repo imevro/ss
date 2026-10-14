@@ -59,7 +59,7 @@ export type ChatState = {
   readonly liveId: string | null;
 };
 
-export const emptyState = (): ChatState => ({ messages: [], work: null, turns: 0, problem: '', liveId: null });
+const emptyState = (): ChatState => ({ messages: [], work: null, turns: 0, problem: '', liveId: null });
 
 /** Запись ленты с сервера. Сырое поле несёт ход работы ответа. */
 export type StoredRow = {
@@ -71,7 +71,7 @@ export type StoredRow = {
 };
 
 /** Готовые реплики с сервера: они уже есть, переигрывать их нечего. */
-export const settledOf = (messages: readonly StoredRow[]): readonly ChatMessage[] =>
+const settledOf = (messages: readonly StoredRow[]): readonly ChatMessage[] =>
   messages.map((message) => {
     // Ход работы есть в записи — реплика несёт его с собой; нет — реплика без строки.
     const work = workOfRaw(message.raw);
@@ -99,7 +99,9 @@ const blocksOf = (text: string): readonly ChatBlock[] => {
 /** Вызовы хода: полный список записи, а у старых записей — одни имена. */
 const callsOfWork = (stored: StoredWork): readonly ToolCall[] => {
   if (stored.calls !== undefined) return stored.calls;
-  return stored.names.map((name) => ({ name, intent: name }));
+  const names = stored.names;
+  if (names === undefined) return [];
+  return names.map((name) => ({ name, intent: name }));
 };
 
 /**

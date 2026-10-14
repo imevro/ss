@@ -8,8 +8,19 @@ import type { ToolCall } from './chat';
 /** Комната онбординга: ждём готовое предложение таблиц. */
 export const onboardingRoom = (userId: string): string => `onboarding:${userId}`;
 
+/** Начало имени комнаты чата. Имя собирает и разбирает только это место. */
+const CONVERSATION_PREFIX = 'conversation:';
+
 /** Комната чата: ответ агента идёт по кускам. */
-export const conversationRoom = (conversationId: string): string => `conversation:${conversationId}`;
+export const conversationRoom = (conversationId: string): string => `${CONVERSATION_PREFIX}${conversationId}`;
+
+/** Номер чата из имени комнаты. Имя другого вида — не комната чата. */
+export const conversationOfRoom = (room: string): string | undefined => {
+  if (!room.startsWith(CONVERSATION_PREFIX)) return;
+  const id = room.slice(CONVERSATION_PREFIX.length);
+  if (id === '') return;
+  return id;
+};
 
 /**
  * Что уходит в браузер. Виды одни на все комнаты.

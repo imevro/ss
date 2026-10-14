@@ -15,9 +15,8 @@ export const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
   return (await response.json()) as T;
 };
 
-/** Ответ входа от better-auth: успех или текст отказа. */
-export const errorText = (error: { message?: string } | null | undefined): string | undefined => {
-  if (error === null || error === undefined) return;
+/** Текст отказа входа. Отказа нет — звать незачем; поле без причины даёт общее слово. */
+export const errorText = (error: { message?: string }): string => {
   if (error.message === undefined) return 'не вышло';
   return error.message;
 };

@@ -15,7 +15,9 @@ const TRANSLIT: ReadonlyMap<string, string> = new Map(
   'а=a|б=b|в=v|г=g|д=d|е=e|ё=e|ж=zh|з=z|и=i|й=y|к=k|л=l|м=m|н=n|о=o|п=p|р=r|с=s|т=t|у=u|ф=f|х=h|ц=c|ч=ch|ш=sh|щ=sch|ъ=|ы=y|ь=|э=e|ю=yu|я=ya'
     .split('|')
     .map((pair) => {
-      const [from = '', to = ''] = pair.split('=');
+      const [from, to] = pair.split('=');
+      // Запись без «=» — испорченный список переводов, а не пустая буква: молчать нельзя.
+      if (from === undefined || to === undefined) throw new Error(`перевод букв испорчен: ${pair}`);
       return [from, to] as const;
     }),
 );
@@ -97,9 +99,7 @@ const ctxTables = (): readonly string[] => [
   `CREATE TABLE IF NOT EXISTS ctx.conversations (
      id text PRIMARY KEY,
      source text NOT NULL,
-     external_id text,
      title text NOT NULL,
-     agent text,
      created_at timestamptz NOT NULL DEFAULT now(),
      last_message_at timestamptz NOT NULL DEFAULT now()
    )`,
@@ -110,12 +110,12 @@ const ctxTables = (): readonly string[] => [
      author_name text,
      text text NOT NULL,
      sent_at timestamptz NOT NULL DEFAULT now(),
-     external_id text,
      raw jsonb NOT NULL DEFAULT '{}'::jsonb
    )`,
   'CREATE INDEX IF NOT EXISTS ctx_messages_conversation_idx ON ctx.messages (conversation_id, sent_at)',
-  // Повторная доставка спотыкается об этот ключ: дублей в ленте нет.
-  'CREATE UNIQUE INDEX IF NOT EXISTS ctx_messages_external_idx ON ctx.messages (conversation_id, external_id)',
+  // Список чатов читается по времени последней записи: без индекса это чтение
+  // таблицы целиком с сортировкой.
+  'CREATE INDEX IF NOT EXISTS ctx_conversations_last_message_idx ON ctx.conversations (last_message_at DESC)',
 ];
 
 /** Журнал правок схемы: что и когда применено к базе компании. */

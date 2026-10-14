@@ -12,6 +12,7 @@
  */
 import { platformSql } from '@workspace/db';
 import type { ClientEvent } from '@workspace/types';
+import { conversationOfRoom, onboardingRoom } from '@workspace/types';
 import type { MiddlewareHandler } from 'hono';
 import { Hono } from 'hono';
 import { upgradeWebSocket, websocket } from 'hono/bun';
@@ -24,7 +25,7 @@ import { clientEventSchema, jobEventBodySchema, okSchema } from './contracts';
 import { badRequest, bodyOf, forbidden, jsonResponse } from './docs';
 import { config } from './env';
 import { problem } from './problem';
-import { joinRoom, leaveRoom, say } from './rooms';
+import { asSocket, joinRoom, leaveRoom, say } from './rooms';
 
 export const liveRoutes = new Hono();
 
@@ -47,23 +48,16 @@ const guard: MiddlewareHandler = async (c, next) => {
 const mayEnterRoom = async (room: string, headers: Headers): Promise<boolean> => {
   const session = await auth.api.getSession({ headers });
   if (session === null) return false;
-  if (room === onboardingRoomOf(session.user.id)) return true;
-  const conversationId = conversationOf(room);
+  if (room === onboardingRoom(session.user.id)) return true;
+  const conversationId = conversationOfRoom(room);
   if (conversationId === undefined) return false;
+  // Чат лежит в базе своей компании, а по номеру чата компанию заранее не видно: спрашиваем
+  // по одной базе на каждую компанию человека. Их единицы, и пулы уже открыты.
+  // ponytail: обход по компаниям, а не один запрос — номер компании в имени комнаты убрал бы
+  // его, но это правка протокола комнат на обеих сторонах; заводить, когда компаний станет много.
   const companies = await companiesOf(session.user.id);
   const owned = await Promise.all(companies.map(async (company) => companyHas(company.id, conversationId)));
   return owned.some((yes) => yes);
-};
-
-/** Имя комнаты онбординга: вид и номер человека. */
-const onboardingRoomOf = (userId: string): string => `onboarding:${userId}`;
-
-/** Номер чата из имени комнаты. Другого вида имени не бывает. */
-const conversationOf = (room: string): string | undefined => {
-  if (!room.startsWith('conversation:')) return;
-  const id = room.slice('conversation:'.length);
-  if (id === '') return;
-  return id;
 };
 
 /** Лежит ли этот чат в базе компании: по ней и решается доступ. */
@@ -108,10 +102,10 @@ liveRoutes.get(
     if (room === undefined) return {};
     return {
       onOpen: (_event: Event, ws: WSContext) => {
-        joinRoom(room, ws.raw as never);
+        joinRoom(room, asSocket(ws.raw));
       },
       onClose: (_event: CloseEvent, ws: WSContext) => {
-        leaveRoom(room, ws.raw as never);
+        leaveRoom(room, asSocket(ws.raw));
       },
     };
   }),
@@ -156,7 +150,9 @@ const updateOf = (
   if (typeof room !== 'string' || room === '') return;
   const event = clientEventSchema.safeParse(body.event);
   if (!event.success) return;
-  return { room, event: event.data as ClientEvent };
+  // Разбор дал ровно тот вид, что объявлен у клиента: приведение не нужно.
+  const parsed: ClientEvent = event.data;
+  return { room, event: parsed };
 };
 
 export { websocket };

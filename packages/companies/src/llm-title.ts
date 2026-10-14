@@ -6,7 +6,7 @@
 import type { Result } from '@workspace/types';
 import { z } from 'zod';
 
-import type { SgrError } from './sgr';
+import type { LlmConfig, SgrAnswer, SgrError } from './sgr';
 import { sgr } from './sgr';
 
 /** Сколько знаков вопроса отдаём модели. Первый вопрос бывает длинным, а имя — нет. */
@@ -18,12 +18,6 @@ export const chatTitleSchema = z.object({
 });
 
 export type ChatTitle = z.infer<typeof chatTitleSchema>;
-
-export type TitleConfig = {
-  readonly baseURL: string;
-  readonly apiKey: string;
-  readonly model: string;
-};
 
 const SYSTEM = [
   'Ты придумываешь короткое название чата с ассистентом по первому вопросу человека.',
@@ -37,7 +31,7 @@ const SYSTEM = [
 ].join('\n');
 
 /** Название по первому вопросу. Срок короткий: человек ждёт ответа, а не списка. */
-export const chatTitle = (firstMessage: string, config: TitleConfig): Promise<Result<ChatTitle, SgrError>> =>
+export const chatTitle = (firstMessage: string, config: LlmConfig): Promise<Result<SgrAnswer<ChatTitle>, SgrError>> =>
   sgr({
     schema: chatTitleSchema,
     system: SYSTEM,
@@ -46,4 +40,6 @@ export const chatTitle = (firstMessage: string, config: TitleConfig): Promise<Re
     apiKey: config.apiKey,
     model: config.model,
     deadlineSeconds: 30,
+    // Имя — три слова; всё, что сверх этого, модель не должна даже начинать писать.
+    maxTokens: 512,
   });

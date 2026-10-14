@@ -8,7 +8,7 @@
 import { randomBytes } from 'node:crypto';
 
 import type { CompanyProposal } from '@workspace/companies';
-import { companyProposalSchema, planProvision } from '@workspace/companies';
+import { acceptProposal, planProvision } from '@workspace/companies';
 import { companyDatabases, db, organization } from '@workspace/db';
 import { createLogger, logStep, messageOf } from '@workspace/log';
 import { eq } from 'drizzle-orm';
@@ -38,18 +38,35 @@ const withDatabase = (coreUrl: string, dbName: string): string => {
 
 const password = (): string => randomBytes(24).toString('base64url');
 
-const noop = (): void => undefined;
+/** Уборка не удалась: это не беда выписки, но и не молчание — пишем в журнал.
+ *  Имя базы приходит сюда из плана: на месте определения его ещё нет. */
+const swallow =
+  (dbName: string) =>
+  (error: unknown): void => {
+    log.warn('уборка не удалась', { dbName, error: messageOf(error) });
+  };
 
 /**
  * Принятое предложение лежит в метаданных компании — столбце плагина со строкой
- * JSON. Разбираем её целиком, а не ищем поле по кускам.
+ * JSON. Строку разбираем без исключения, а вид значения проверяет та же схема,
+ * что и при записи: второй двери к одному значению нет.
  */
 const readProposal = (metadata: string | null): CompanyProposal | undefined => {
   if (metadata === null) return;
-  const parsedMetadata = JSON.parse(metadata) as Record<string, unknown>;
-  const parsed = companyProposalSchema.safeParse(parsedMetadata.proposal);
-  if (!parsed.success) return;
-  return parsed.data;
+  const parsed = parseJson(metadata);
+  if (typeof parsed !== 'object' || parsed === null) return;
+  const accepted = acceptProposal((parsed as Record<string, unknown>).proposal);
+  if (!accepted.ok) return;
+  return accepted.value;
+};
+
+/** Разбор байтов: испорченное значение даёт пусто, а не исключение. */
+const parseJson = (raw: string): unknown => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 };
 
 export const provisionCompanyDatabase = async (data: { readonly companyId: string }): Promise<ProvisionResult> => {
@@ -95,10 +112,10 @@ export const provisionCompanyDatabase = async (data: { readonly companyId: strin
 
   /** Уборка за собой: годятся только имена из плана, они проверены. */
   const dropOwnDatabase = async (): Promise<void> => {
-    await cluster.unsafe(`DROP DATABASE IF EXISTS ${plan.dbName} WITH (FORCE)`).catch(noop);
+    await cluster.unsafe(`DROP DATABASE IF EXISTS ${plan.dbName} WITH (FORCE)`).catch(swallow(plan.dbName));
     await Promise.all(
       [plan.roles.ro, plan.roles.rw, plan.roles.ddl].map((role) =>
-        cluster.unsafe(`DROP ROLE IF EXISTS ${role}`).catch(noop),
+        cluster.unsafe(`DROP ROLE IF EXISTS ${role}`).catch(swallow(plan.dbName)),
       ),
     );
   };

@@ -96,13 +96,6 @@ const STARTS_WITH_LETTER = /^[\p{L}\p{N}]/u;
 /** Имена каналов для ответа: список плиток — единственный источник. */
 const channelIds = (): readonly string[] => CHANNELS.map((channel) => channel.id);
 
-/** Подпись канала: интерфейс берёт её тут, своих названий не выдумывает. */
-export const channelName = (id: Channel): string => {
-  const found = CHANNELS.find((channel) => channel.id === id);
-  if (found === undefined) return id;
-  return found.name;
-};
-
 /** Шаг принимается или отклоняется чистой функцией; сеть и база тут ни при чём. */
 export const validateAnswer = (step: OnboardingStep, raw: string): Result<string, OnboardingError> => {
   const value = raw.trim();
@@ -181,22 +174,4 @@ export const putAnswer = (
   if (step.kind === 'channels') return ok({ ...answers, done, channels: channelsOf(value.split(EMAIL_SPLIT)) });
   if (step.id === 'company') return ok({ ...answers, done, company: value });
   return ok({ ...answers, done, business: value });
-};
-
-/** Ответ шага словами: лента показывает его, а не сырое значение хранилища. */
-export const answerText = (answers: OnboardingAnswers, id: OnboardingStepId): string => {
-  if (id === 'company') return answers.company;
-  if (id === 'business') return answers.business;
-  if (id === 'invites') return answers.invites.join(', ');
-  return answers.channels.map(channelName).join(', ');
-};
-
-/** Следующий вопрос: первый непройденный шаг. Пройдены все — вопросов нет. */
-export const nextStep = (answers: OnboardingAnswers): OnboardingStep | undefined =>
-  ONBOARDING_STEPS.find((step) => !answers.done.includes(step.id));
-
-/** Заголовок чата компании: имя человека, а не первый вопрос. */
-export const companyTitle = (answers: OnboardingAnswers): string => {
-  if (answers.company !== '') return answers.company;
-  return 'Новая компания';
 };

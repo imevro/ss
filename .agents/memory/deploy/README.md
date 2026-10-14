@@ -7,3 +7,5 @@
 - [`dostup-k-repo-mic-na-borde-gentic`](dostup-k-repo-mic-na-borde-gentic.md) — что нужно борду gentic, чтобы самому ставить наборы навыков из закрытого репозитория MIC.
 - [`gotcha-migracii-otstayut-ot-shemy`](gotcha-migracii-otstayut-ot-shemy.md) — схема накатывается прямо, миграции отстают: чистка проверкой на чистой базе, починка генерацией.
 - [`gotcha-staryi-process-derzhit-port`](gotcha-staryi-process-derzhit-port.md) — порт 8787 держит вчерашний процесс: проверка отвечает старым кодом, новая копия падает с EADDRINUSE.
+- [`how-podnimaetsya-stek-dlya-zhivoy-proverki`](how-podnimaetsya-stek-dlya-zhivoy-proverki.md) — стек поднимается тремя вещами: база в докере, отдельный брокер очереди, API и веб из `bun run dev`.
+- [`gotcha-generator-vstaet-na-podskazke`](gotcha-generator-vstaet-na-podskazke.md) — `db:generate` спрашивает человека о переименовании старых таблиц и без терминала не пишет файл.
