@@ -22,10 +22,7 @@ stdenvNoCC.mkDerivation {
 
   # Один рабочий набор на корень репозитория (apps/* + packages/*), один bun.lock.
   bunRoot = ".";
-  # --offline is required: the sandbox has no network, and bun 1.3 resolves the
-  # workspace from bun.lock + the bun2nix package cache (checked locally: 1368
-  # cached packages, no registry manifests). bun 1.4 needs manifests, which
-  # bun2nix 2.1.2 does not generate — the box pins bun 1.3.x, so stay on 1.3.
+  # --offline: сеть в сборке закрыта, набор целиком лежит в кеше bun2nix.
   bunInstallFlags = [ "--linker=hoisted" "--frozen-lockfile" "--offline" ];
   dontRunLifecycleScripts = true;
   dontConfigure = true;
