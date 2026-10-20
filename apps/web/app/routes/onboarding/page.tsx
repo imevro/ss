@@ -23,7 +23,7 @@ import type { Route } from './+types/page';
 import type { Turn } from '@/components/chat';
 import { ChatComposer, ChatThread } from '@/components/chat';
 import { companyAddress } from '@/lib/address';
-import { api, reasonOf, serverHeaders } from '@/lib/api';
+import { api, apiOrigin, reasonOf, serverHeaders } from '@/lib/api';
 import { useLiveRoom } from '@/lib/live';
 import { noindexMeta } from '@/lib/page-title';
 
@@ -84,7 +84,7 @@ const workItems = (): readonly AgentActivityItem[] => [
  * вопрос и прежние ответы, поэтому картинка не мигает пустым окном.
  */
 export async function loader({ request }: Route.LoaderArgs) {
-  const origin = new URL(request.url).origin;
+  const origin = apiOrigin(request);
   const headers = serverHeaders(request);
   // Кто вошёл, спрашиваем первым: список шагов тоже требует входа, и отказ на входе —
   // это увод на экран входа, а не ошибка страницы.

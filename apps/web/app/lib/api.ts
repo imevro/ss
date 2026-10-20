@@ -6,6 +6,18 @@ export const serverHeaders = (request: Request): Headers => {
   return headers;
 };
 
+/**
+ * Адрес API для загрузчиков. За обратным прокси схема страницы — http (прокси
+ * снимает шифр), и адрес страницы уводит запрос на 308 к https, а при переходе
+ * браузерный клиент теряет куку. Потому адрес берём из настройки; не задана —
+ * адрес страницы, как в разработке.
+ */
+export const apiOrigin = (request: Request): string => {
+  const configured = process.env.API_ORIGIN;
+  if (configured !== undefined && configured !== '') return configured;
+  return new URL(request.url).origin;
+};
+
 /** Обращение к своему API. Ошибку отдаём наверх, а не прячем. */
 export const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const headers = new Headers(init?.headers);

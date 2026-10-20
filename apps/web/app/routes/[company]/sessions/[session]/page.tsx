@@ -24,7 +24,7 @@ import type { Route } from './+types/page';
 import type { Queued, Turn } from '@/components/chat';
 import { ChatComposer, ChatThread } from '@/components/chat';
 import { sessionAddress, shortId } from '@/lib/address';
-import { api, reasonOf, serverHeaders } from '@/lib/api';
+import { api, apiOrigin, reasonOf, serverHeaders } from '@/lib/api';
 import { useChatLog } from '@/lib/chat-log';
 import type { ChatEvent, ChatMessage, StoredRow, Work } from '@/lib/chat-state';
 import { workOfStored } from '@/lib/chat-state';
@@ -106,7 +106,7 @@ const sidebarOpenOf = (request: Request): boolean => {
  * Первый же ответ содержит готовую картинку, поэтому пустое окно не мигает.
  */
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const origin = new URL(request.url).origin;
+  const origin = apiOrigin(request);
   const headers = serverHeaders(request);
   const { company: slug, session } = params;
 

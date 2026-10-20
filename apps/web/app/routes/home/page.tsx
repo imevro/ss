@@ -4,7 +4,7 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/page';
 import { companyAddress } from '@/lib/address';
-import { api, serverHeaders } from '@/lib/api';
+import { api, apiOrigin, serverHeaders } from '@/lib/api';
 import { noindexMeta } from '@/lib/page-title';
 
 export const meta = () => noindexMeta(['Компании'], 'Компании, к которым у вас есть доступ.');
@@ -16,7 +16,7 @@ type Company = { readonly id: string; readonly slug: string; readonly name: stri
  * до отрисовки известно, показывать компании или онбординг.
  */
 export async function loader({ request }: Route.LoaderArgs) {
-  const origin = new URL(request.url).origin;
+  const origin = apiOrigin(request);
   const headers = serverHeaders(request);
   const me = await fetch(`${origin}/v1/me`, { headers });
   if (me.status === 401) throw redirect('/login');
