@@ -22,7 +22,11 @@ stdenvNoCC.mkDerivation {
 
   # Один рабочий набор на корень репозитория (apps/* + packages/*), один bun.lock.
   bunRoot = ".";
-  bunInstallFlags = [ "--linker=hoisted" "--frozen-lockfile" "--offline" ];
+  # No --offline: offline mode demands a cached registry *manifest* per workspace
+  # dependency, which bun2nix's cache does not carry (it carries the packages).
+  # Without the flag bun uses the lockfile + package cache and only then the
+  # network — which the sandbox denies anyway, so a miss fails loud.
+  bunInstallFlags = [ "--linker=hoisted" "--frozen-lockfile" ];
   dontRunLifecycleScripts = true;
   dontConfigure = true;
   dontFixup = true;
