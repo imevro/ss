@@ -29,8 +29,6 @@ const queue = new Queue('ss', {
  * воркер столько, сколько захочет та сторона, к которой она ходит.
  */
 const LIMITS: Readonly<Record<JobName, { readonly timeoutSeconds: number; readonly attempts: number }>> = {
-  // Модель отвечает секундами. Вторая попытка — на случай ответа мимо схемы.
-  'onboarding:proposal': { timeoutSeconds: 300, attempts: 2 },
   // Выписка базы не повторяется: второй прогон заново заводит базу и сносит её при уборке.
   'db:provision': { timeoutSeconds: 900, attempts: 1 },
 };

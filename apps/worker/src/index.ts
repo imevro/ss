@@ -7,7 +7,6 @@ import type { JobName, Jobs } from '@workspace/types';
 import { Worker } from 'bunqueue/client';
 
 import { config } from './env';
-import { proposeFor } from './onboarding';
 import { provisionCompanyDatabase } from './provision';
 
 setupLogging();
@@ -20,7 +19,6 @@ const log = createLogger('worker');
 const jobOf = <N extends JobName>(name: N, data: unknown): Jobs[N] => data as Jobs[N];
 
 const handlers: { readonly [N in JobName]: (data: unknown) => Promise<unknown> } = {
-  'onboarding:proposal': (data) => proposeFor(jobOf('onboarding:proposal', data)),
   'db:provision': (data) => provisionCompanyDatabase(jobOf('db:provision', data)),
 };
 

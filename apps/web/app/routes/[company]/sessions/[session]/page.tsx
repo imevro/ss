@@ -222,8 +222,8 @@ export default function Company({ loaderData }: Route.ComponentProps) {
    */
   const onEvent = useCallback(
     (event: ClientEvent): void => {
-      // Вопрос человека и ход онбординга в комнату чата не приходят.
-      if (event.kind === 'proposal' || event.kind === 'problem') return;
+      // Отказ задачи в комнату чата не приходит.
+      if (event.kind === 'problem') return;
       if (event.kind === 'titled') {
         // Имя чата пришло от модели: список обновляется без перезагрузки страницы.
         setConversations((current) =>

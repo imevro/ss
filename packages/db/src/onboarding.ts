@@ -21,9 +21,7 @@ export const userOnboarding = pgTable(
     companyId: text('company_id'),
     /** Ответы по шагам, по порядку вопросов. */
     answers: jsonb('answers').notNull().default([]),
-    /** Предложение таблиц от модели: до первого удачного ответа пусто. */
-    proposal: jsonb('proposal'),
-    /** Состояние: started | proposal | done. */
+    /** Состояние: started | done. */
     status: text('status').notNull().default('started'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

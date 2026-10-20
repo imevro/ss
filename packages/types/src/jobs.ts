@@ -4,7 +4,6 @@
  */
 
 export type Jobs = {
-  'onboarding:proposal': { readonly userId: string };
   'db:provision': { readonly companyId: string };
 };
 

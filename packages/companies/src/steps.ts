@@ -8,19 +8,10 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_SPLIT = /[\s,;]+/;
 
 /**
- * Онбординг детерминированный: четыре вопроса, никакой модели. Модель вызывается
- * один раз — на предложение таблиц, — и её ответ обязан лечь в схему предложения.
+ * Онбординг детерминированный: три вопроса, никакой модели. Название и описание
+ * ложатся в компанию, адреса — в приглашения; больше онбординг ничего не делает.
  */
-export type OnboardingStepId = 'company' | 'business' | 'invites' | 'channels';
-
-export type Channel = 'telegram' | 'slack' | 'whatsapp';
-
-/** Список для выбора: он же источник подписей. Интерфейс своих названий не выдумывает. */
-export const CHANNELS: readonly { readonly id: Channel; readonly name: string }[] = [
-  { id: 'telegram', name: 'Телеграм' },
-  { id: 'slack', name: 'Слэк' },
-  { id: 'whatsapp', name: 'Ватсап' },
-];
+export type OnboardingStepId = 'company' | 'business' | 'invites';
 
 /**
  * Ответы по имени шага, а не списком по порядку: добавленный вопрос не сдвигает
@@ -30,7 +21,6 @@ export type OnboardingAnswers = {
   readonly company: string;
   readonly business: string;
   readonly invites: readonly string[];
-  readonly channels: readonly Channel[];
   /** Пройденные шаги. Необязательный вопрос нельзя отличить «пропустил» от «не дошли»
    *  по значению ответа, поэтому пройденность хранится словом. */
   readonly done: readonly OnboardingStepId[];
@@ -40,14 +30,13 @@ export const EMPTY_ANSWERS: OnboardingAnswers = {
   company: '',
   business: '',
   invites: [],
-  channels: [],
   done: [],
 };
 
 export type OnboardingStep = {
   readonly id: OnboardingStepId;
   readonly question: string;
-  readonly kind: 'text' | 'longtext' | 'emails' | 'channels';
+  readonly kind: 'text' | 'longtext' | 'emails';
   readonly required: boolean;
   /** Подсказка в поле ответа. Шаг знает свой ответ — интерфейс ничего не выдумывает. */
   readonly hint: string;
@@ -75,26 +64,15 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
     required: false,
     hint: 'Адреса почты через запятую',
   },
-  {
-    id: 'channels',
-    question: 'Где идут рабочие коммуникации?',
-    kind: 'channels',
-    required: true,
-    hint: 'Выберите мессенджеры',
-  },
 ];
 
 export type OnboardingError =
   | { readonly kind: 'empty'; readonly step: OnboardingStepId }
   | { readonly kind: 'bad_email'; readonly value: string }
-  | { readonly kind: 'bad_channel'; readonly value: string }
   | { readonly kind: 'bad_name'; readonly value: string };
 
 /** Имя начинается с буквы или цифры: точка в начале — опечатка, а не название. */
 const STARTS_WITH_LETTER = /^[\p{L}\p{N}]/u;
-
-/** Имена каналов для ответа: список плиток — единственный источник. */
-const channelIds = (): readonly string[] => CHANNELS.map((channel) => channel.id);
 
 /** Шаг принимается или отклоняется чистой функцией; сеть и база тут ни при чём. */
 export const validateAnswer = (step: OnboardingStep, raw: string): Result<string, OnboardingError> => {
@@ -110,14 +88,6 @@ export const validateAnswer = (step: OnboardingStep, raw: string): Result<string
       .find((part) => !EMAIL.test(part));
     if (bad !== undefined) return err({ kind: 'bad_email', value: bad });
   }
-  if (step.kind === 'channels' && value !== '') {
-    const known = channelIds();
-    const bad = value
-      .split(EMAIL_SPLIT)
-      .filter((part) => part !== '')
-      .find((part) => !known.includes(part));
-    if (bad !== undefined) return err({ kind: 'bad_channel', value: bad });
-  }
   return ok(value);
 };
 
@@ -132,10 +102,6 @@ const listOf = (value: unknown): readonly string[] => {
   return value.filter((item): item is string => typeof item === 'string');
 };
 
-/** Каналы из хранилища: чужие имена отбрасываем, своих не добавляем. */
-const channelsOf = (value: unknown): readonly Channel[] =>
-  CHANNELS.filter((channel) => listOf(value).includes(channel.id)).map((channel) => channel.id);
-
 const stepIds = (value: unknown): readonly OnboardingStepId[] =>
   ONBOARDING_STEPS.filter((step) => listOf(value).includes(step.id)).map((step) => step.id);
 
@@ -147,7 +113,6 @@ export const answersOf = (raw: unknown): OnboardingAnswers => {
     company: textOf(record.company),
     business: textOf(record.business),
     invites: listOf(record.invites),
-    channels: channelsOf(record.channels),
     done: stepIds(record.done),
   };
 };
@@ -171,7 +136,6 @@ export const putAnswer = (
   if (step.kind === 'emails') {
     return ok({ ...answers, done, invites: value.split(EMAIL_SPLIT).filter((part) => part !== '') });
   }
-  if (step.kind === 'channels') return ok({ ...answers, done, channels: channelsOf(value.split(EMAIL_SPLIT)) });
   if (step.id === 'company') return ok({ ...answers, done, company: value });
   return ok({ ...answers, done, business: value });
 };

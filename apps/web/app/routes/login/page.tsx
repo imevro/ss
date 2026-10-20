@@ -20,15 +20,14 @@ export default function Login() {
     setProblem('');
     const signedIn = await authClient.signIn.email({ email, password });
     if (signedIn.error === null) {
-      // На главную: она сама решает — компании или онбординг. Уходить сразу в
-      // онбординг нельзя: человек с компанией проходил его заново.
-      globalThis.location.assign('/');
+      // В список компаний: он открывается всегда, и оттуда видно — есть доступ или нет.
+      globalThis.location.assign('/companies');
       return;
     }
     const created = await authClient.signUp.email({ email, password, name: email });
     setBusy(false);
     if (created.error === null) {
-      globalThis.location.assign('/');
+      globalThis.location.assign('/companies');
       return;
     }
     setProblem(errorText(created.error));

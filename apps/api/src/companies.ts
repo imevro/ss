@@ -6,8 +6,7 @@
  * здесь только перевод наших поводов в его вызовы и обратно.
  */
 
-import type { CompanyProposal } from '@workspace/companies';
-import { acceptProposal, toSlug } from '@workspace/companies';
+import { toSlug } from '@workspace/companies';
 import { companyDatabases, db, member, organization } from '@workspace/db';
 import { createLogger, messageOf } from '@workspace/log';
 import type { Result } from '@workspace/types';
@@ -23,13 +22,13 @@ export type CompanyDatabase = typeof companyDatabases.$inferSelect;
 
 export type NewCompany = {
   readonly name: string;
+  readonly business: string;
   readonly headers: Headers;
-  readonly proposal: unknown;
   readonly invites: readonly string[];
 };
 
 /** Почему компания не заведена. Клиент ветвится по слову, а не по тексту. */
-export type CompanyError = { readonly kind: 'bad_proposal' | 'not_created' };
+export type CompanyError = { readonly kind: 'not_created' };
 
 /**
  * Заводит компанию, владельца и приглашения. Половина компании без владельца не
@@ -39,13 +38,9 @@ export type CompanyError = { readonly kind: 'bad_proposal' | 'not_created' };
  * компанию не отменяет: она уже есть, и терять её из-за одного адреса нельзя.
  */
 export const createCompany = async (input: NewCompany): Promise<Result<Company, CompanyError>> => {
-  const accepted = acceptProposal(input.proposal);
-  if (!accepted.ok) return err({ kind: 'bad_proposal' });
-  const proposal: CompanyProposal = accepted.value;
-
   const made = await auth.api
     .createOrganization({
-      body: { name: input.name, slug: toSlug(input.name), metadata: { proposal } },
+      body: { name: input.name, slug: toSlug(input.name), metadata: { business: input.business } },
       headers: input.headers,
     })
     .catch((error: unknown): undefined => {

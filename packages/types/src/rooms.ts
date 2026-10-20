@@ -5,9 +5,6 @@ import type { ToolCall } from './chat';
  * API держит её, браузер в неё подписан.
  */
 
-/** Комната онбординга: ждём готовое предложение таблиц. */
-export const onboardingRoom = (userId: string): string => `onboarding:${userId}`;
-
 /** Начало имени комнаты чата. Имя собирает и разбирает только это место. */
 const CONVERSATION_PREFIX = 'conversation:';
 
@@ -30,7 +27,6 @@ export const conversationOfRoom = (room: string): string | undefined => {
  * страница ничего не досчитывает сама.
  */
 export type ClientEvent =
-  | { readonly kind: 'proposal'; readonly proposal: unknown }
   | {
       readonly kind: 'started';
       readonly conversationId: string;

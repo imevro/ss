@@ -23,16 +23,11 @@ export const userSchema = z.object({
 });
 
 export const stepSchema = z.object({
-  id: z.enum(['company', 'business', 'invites', 'channels']).meta({ description: 'Имя шага.' }),
+  id: z.enum(['company', 'business', 'invites']).meta({ description: 'Имя шага.' }),
   question: z.string().meta({ description: 'Сам вопрос.' }),
-  kind: z.enum(['text', 'longtext', 'emails', 'channels']).meta({ description: 'Вид ответа.' }),
+  kind: z.enum(['text', 'longtext', 'emails']).meta({ description: 'Вид ответа.' }),
   required: z.boolean().meta({ description: 'Обязателен ли ответ.' }),
   hint: z.string().meta({ description: 'Подсказка в поле ответа.' }),
-});
-
-export const channelSchema = z.object({
-  id: z.enum(['telegram', 'slack', 'whatsapp']).meta({ description: 'Имя мессенджера.' }),
-  name: z.string().meta({ description: 'Подпись на плитке.' }),
 });
 
 export const answersSchema = z
@@ -40,35 +35,13 @@ export const answersSchema = z
     company: z.string(),
     business: z.string(),
     invites: z.array(z.string()),
-    channels: z.array(z.string()),
     done: z.array(z.string()),
   })
   .meta({ description: 'Ответы по имени шага и пройденные шаги.' });
 
-export const fieldSchema = z.object({
-  name: z.string().meta({ description: 'Имя столбца.' }),
-  type: z.enum(['text', 'number', 'money', 'date', 'bool', 'ref']).meta({ description: 'Тип столбца.' }),
-  note: z.string().meta({ description: 'Что хранит столбец.' }),
-});
-
-export const entitySchema = z.object({
-  name: z.string().meta({ description: 'Имя таблицы.' }),
-  purpose: z.string().meta({ description: 'Зачем она компании.' }),
-  fields: z.array(fieldSchema),
-});
-
-/** Предложение таблиц: то, что вернула модель и приняла схема. */
-export const proposalSchema = z.object({
-  industry: z.string(),
-  entities: z.array(entitySchema),
-  departments: z.array(z.string()),
-  use_cases: z.array(z.string()),
-});
-
 export const onboardingSchema = z.object({
   answers: answersSchema,
-  proposal: proposalSchema.nullable().meta({ description: 'До первого удачного сбора — пусто.' }),
-  status: z.string().meta({ description: 'Состояние: `started`, `proposal` или `done`.' }),
+  status: z.string().meta({ description: 'Состояние: `started` или `done`.' }),
   companyId: z.string().nullable(),
 });
 
@@ -112,7 +85,6 @@ const toolCallSchema = z.object({ name: z.string(), intent: z.string() });
  * не «пусто», а испорченный кадр: его отбрасываем, а не подставляем пустое.
  */
 export const clientEventSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('proposal'), proposal: z.unknown() }),
   z.object({
     kind: z.literal('started'),
     conversationId: z.string(),
@@ -142,7 +114,7 @@ export const clientEventSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const answerBodySchema = z.object({
-  step: z.enum(['company', 'business', 'invites', 'channels']).meta({ description: 'Имя шага.' }),
+  step: z.enum(['company', 'business', 'invites']).meta({ description: 'Имя шага.' }),
   value: z.string().meta({ description: 'Ответ строкой.' }),
 });
 
@@ -162,7 +134,7 @@ export const writtenSchema = z.object({
 
 export const companyBodySchema = z.object({
   name: z.string().meta({ description: 'Название компании.' }),
-  proposal: proposalSchema,
+  business: z.string().meta({ description: 'Чем занимается компания.' }),
   invites: z.array(z.string()).meta({ description: 'Адреса приглашений.' }),
 });
 

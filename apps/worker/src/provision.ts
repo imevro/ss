@@ -7,8 +7,7 @@
 
 import { randomBytes } from 'node:crypto';
 
-import type { CompanyProposal } from '@workspace/companies';
-import { acceptProposal, planProvision } from '@workspace/companies';
+import { planProvision } from '@workspace/companies';
 import { companyDatabases, db, organization } from '@workspace/db';
 import { createLogger, logStep, messageOf } from '@workspace/log';
 import { eq } from 'drizzle-orm';
@@ -46,29 +45,6 @@ const swallow =
     log.warn('уборка не удалась', { dbName, error: messageOf(error) });
   };
 
-/**
- * Принятое предложение лежит в метаданных компании — столбце плагина со строкой
- * JSON. Строку разбираем без исключения, а вид значения проверяет та же схема,
- * что и при записи: второй двери к одному значению нет.
- */
-const readProposal = (metadata: string | null): CompanyProposal | undefined => {
-  if (metadata === null) return;
-  const parsed = parseJson(metadata);
-  if (typeof parsed !== 'object' || parsed === null) return;
-  const accepted = acceptProposal((parsed as Record<string, unknown>).proposal);
-  if (!accepted.ok) return;
-  return accepted.value;
-};
-
-/** Разбор байтов: испорченное значение даёт пусто, а не исключение. */
-const parseJson = (raw: string): unknown => {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-};
-
 export const provisionCompanyDatabase = async (data: { readonly companyId: string }): Promise<ProvisionResult> => {
   const step = await logStep.start({
     ctx: { runId: `provision:${data.companyId}`, companyId: data.companyId, agent: 'db:provision' },
@@ -91,15 +67,8 @@ export const provisionCompanyDatabase = async (data: { readonly companyId: strin
     return { status: 'skipped', reason: 'база уже выписана' };
   }
 
-  const proposal = readProposal(company.metadata);
-  if (proposal === undefined) {
-    const reason = 'у компании нет предложения по таблицам';
-    await step.finish({ output: reason, kind: 'error' });
-    return { status: 'failed', reason };
-  }
-
   const creds = { ro: password(), rw: password(), ddl: password() };
-  const planned = planProvision({ slug: company.slug, proposal, passwords: creds });
+  const planned = planProvision({ slug: company.slug, passwords: creds });
   if (!planned.ok) {
     const reason = JSON.stringify(planned.error);
     await step.finish({ output: reason, kind: 'error' });
@@ -148,10 +117,10 @@ export const provisionCompanyDatabase = async (data: { readonly companyId: strin
     });
 
     await step.finish({
-      output: { dbName: plan.dbName, tables: plan.tables.map((table) => table.name) },
+      output: { dbName: plan.dbName },
       explanation: `база ${plan.dbName} выписана`,
     });
-    log.info('база выписана', { companyId: company.id, dbName: plan.dbName, tables: plan.tables.length });
+    log.info('база выписана', { companyId: company.id, dbName: plan.dbName });
     return { status: 'ready', dbName: plan.dbName };
   } catch (error) {
     // База появилась в этом прогоне — значит она наша и половину её оставлять нельзя.

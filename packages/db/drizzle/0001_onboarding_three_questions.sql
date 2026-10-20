@@ -1,0 +1,1 @@
+ALTER TABLE "user_onboarding" DROP COLUMN "proposal";

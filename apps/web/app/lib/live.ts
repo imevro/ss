@@ -9,7 +9,6 @@ const eventOf = (raw: string): ClientEvent | undefined => {
   const frame = parsed as Record<string, unknown>;
   const kind = frame.kind;
   if (typeof kind !== 'string') return;
-  if (kind === 'proposal') return { kind, proposal: frame.proposal };
   if (kind === 'problem') {
     if (typeof frame.reason !== 'string') return;
     return { kind, reason: frame.reason };

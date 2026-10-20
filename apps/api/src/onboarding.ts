@@ -1,19 +1,12 @@
 /**
- * Онбординг: четыре детерминированных вопроса и одно предложение таблиц от модели.
- * Владелец подтверждает предложение — только тогда заводится компания.
+ * Онбординг: три детерминированных вопроса. Модель в нём не участвует: ответы
+ * сохраняются, компания заводится сразу после последнего вопроса.
  *
  * Вид один на весь API: `/v1/...`, множественное число, отказы по одному образцу.
  * Описание каждого маршрута стоит рядом с ним: документ собирается из кода.
  */
 import type { OnboardingStep } from '@workspace/companies';
-import {
-  CHANNELS,
-  finishOnboarding,
-  ONBOARDING_STEPS,
-  putAnswer,
-  saveAnswers,
-  savedOnboarding,
-} from '@workspace/companies';
+import { finishOnboarding, ONBOARDING_STEPS, putAnswer, saveAnswers, savedOnboarding } from '@workspace/companies';
 import { Hono } from 'hono';
 import { describeRoute, resolver } from 'hono-openapi';
 import { z } from 'zod';
@@ -22,7 +15,6 @@ import { auth } from './auth';
 import { createCompany, databaseOf, findCompany, isMemberOf } from './companies';
 import {
   answerBodySchema,
-  channelSchema,
   companyBodySchema,
   companySchema,
   jobSchema,
@@ -35,17 +27,14 @@ import { enqueue } from './queue';
 
 export const onboarding = new Hono();
 
-/** Шаги онбординга и список мессенджеров. Их задаёт ядро, интерфейс только показывает. */
+/** Шаги онбординга. Их задаёт ядро, интерфейс только показывает. */
 onboarding.get(
   '/v1/onboarding/steps',
   describeRoute({
     tags: ['onboarding'],
-    summary: 'Вопросы онбординга и мессенджеры',
+    summary: 'Вопросы онбординга',
     responses: {
-      200: jsonResponse(
-        'Вопросы и мессенджеры.',
-        z.object({ steps: z.array(stepSchema), channels: z.array(channelSchema) }),
-      ),
+      200: jsonResponse('Вопросы.', z.object({ steps: z.array(stepSchema) })),
       401: unauthorized,
     },
   }),
@@ -53,7 +42,7 @@ onboarding.get(
     // Шаги видит только вошедший: онбординг — часть входа, а не витрина.
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
-    return c.json({ steps: ONBOARDING_STEPS, channels: CHANNELS });
+    return c.json({ steps: ONBOARDING_STEPS });
   },
 );
 
@@ -108,41 +97,6 @@ onboarding.put(
   },
 );
 
-/**
- * Предложение таблиц по описанию компании. Ответ модели проверяется схемой:
- * код решает, годно ли предложение, а не модель. Готовое приходит в комнату
- * онбординга событием `proposal`.
- */
-onboarding.post(
-  '/v1/onboarding/proposal',
-  describeRoute({
-    tags: ['onboarding'],
-    summary: 'Собрать предложение таблиц',
-    responses: {
-      202: jsonResponse('Задача поставлена.', jobSchema),
-      400: badRequest,
-      401: unauthorized,
-    },
-  }),
-  async (c) => {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
-
-    // Описание берём из сохранённых ответов: тело запроса ничего не добавляет.
-    const saved = await savedOnboarding(session.user.id);
-    if (saved.answers.business === '') return problem(c, 400, 'bad_request', 'не описано, чем занимается компания');
-
-    // Сбор идёт в очереди: человек не ждёт модель в открытом запросе. Ключ задачи —
-    // человек: пока предложение собирается, второе такое же нажатие новой задачи не заводит.
-    const jobId = await enqueue(
-      'onboarding:proposal',
-      { userId: session.user.id },
-      `onboarding:proposal:${session.user.id}`,
-    );
-    return c.json({ jobId }, 202);
-  },
-);
-
 /** Создание компании. Владелец — тот, кто вошёл. */
 onboarding.post(
   '/v1/companies',
@@ -163,15 +117,11 @@ onboarding.post(
     const body = await bodyOf(c);
     if (body === undefined) return problem(c, 400, 'bad_request', 'не понимаю запрос');
     const parsed = newCompanyOf(body);
-    if (parsed === undefined) return problem(c, 400, 'bad_request', 'нужны название, предложение и владелец');
+    if (parsed === undefined) return problem(c, 400, 'bad_request', 'нужно название компании');
 
     const created = await createCompany({ ...parsed, headers: c.req.raw.headers });
-    // Негодное предложение — ошибка человека. Пустая вставка — сбой сервера:
-    // говорить «твой запрос плох» в этом случае значило бы соврать.
-    if (!created.ok) {
-      if (created.error.kind === 'not_created') return problem(c, 503, 'unavailable', 'компания не заведена');
-      return problem(c, 400, 'bad_request', 'предложение по таблицам не годно');
-    }
+    // Пустая вставка — сбой сервера: говорить «твой запрос плох» тут значило бы соврать.
+    if (!created.ok) return problem(c, 503, 'unavailable', 'компания не заведена');
     await finishOnboarding(session.user.id, created.value.id);
     return c.json({ company: created.value }, 201);
   },
@@ -226,14 +176,13 @@ const explain = (error: { readonly kind: string; readonly value?: string }): str
   const wrong = error.value;
   if (error.kind === 'empty') return 'ответ пустой';
   if (error.kind === 'bad_email') return `адрес не понят: ${wrong}`;
-  if (error.kind === 'bad_channel') return `мессенджер не понят: ${wrong}`;
   if (error.kind === 'bad_name') return 'название начинается со знака — так не бывает';
   return 'ответ не принят';
 };
 
 type NewCompanyInput = {
   readonly name: string;
-  readonly proposal: unknown;
+  readonly business: string;
   readonly invites: readonly string[];
 };
 
@@ -242,11 +191,16 @@ const asStringList = (value: unknown): readonly string[] => {
   return value.filter((item): item is string => typeof item === 'string');
 };
 
+/** Текст из тела запроса: не строка — значит не прислали. */
+const textOf = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+};
+
 const newCompanyOf = (body: unknown): NewCompanyInput | undefined => {
   if (typeof body !== 'object' || body === null) return;
   const record = body as Record<string, unknown>;
   const name = record.name;
   if (typeof name !== 'string' || name.trim() === '') return;
-  if (record.proposal === undefined || record.proposal === null) return;
-  return { name: name.trim(), proposal: record.proposal, invites: asStringList(record.invites) };
+  return { name: name.trim(), business: textOf(record.business), invites: asStringList(record.invites) };
 };

@@ -8,10 +8,8 @@
 import type { Result } from '@workspace/types';
 import { err, ok } from '@workspace/types';
 
-import type { CompanyProposal } from './proposal';
-
 /** Русские буквы в именах баз и ролей недопустимы: переводим в латиницу. */
-const TRANSLIT: ReadonlyMap<string, string> = new Map(
+const TRANSLIT: Readonly<Record<string, string>> = Object.fromEntries(
   'а=a|б=b|в=v|г=g|д=d|е=e|ё=e|ж=zh|з=z|и=i|й=y|к=k|л=l|м=m|н=n|о=o|п=p|р=r|с=s|т=t|у=u|ф=f|х=h|ц=c|ч=ch|ш=sh|щ=sch|ъ=|ы=y|ь=|э=e|ю=yu|я=ya'
     .split('|')
     .map((pair) => {
@@ -21,19 +19,18 @@ const TRANSLIT: ReadonlyMap<string, string> = new Map(
       return [from, to] as const;
     }),
 );
-
 const latin = (name: string): string =>
   name
     .toLowerCase()
     .split('')
     .map((symbol) => {
-      const mapped = TRANSLIT.get(symbol);
+      const mapped = TRANSLIT[symbol];
       if (mapped === undefined) return symbol;
       return mapped;
     })
     .join('');
 
-/** Имя для SQL: строчные буквы, цифры, подчёркивания. Нужно таблицам, ролям и базам. */
+/** Имя для SQL: строчные буквы, цифры, подчёркивания. Нужно ролям и базам. */
 export const toSlug = (name: string): string => {
   const slug = latin(name)
     .replace(/[^a-z0-9]+/g, '_')
@@ -43,28 +40,16 @@ export const toSlug = (name: string): string => {
   return slug;
 };
 
-export type ColumnType = CompanyProposal['entities'][number]['fields'][number]['type'];
-
-export type TenantColumn = { readonly name: string; readonly type: ColumnType; readonly note: string };
-
-export type TenantTable = {
-  readonly name: string;
-  readonly purpose: string;
-  readonly columns: readonly TenantColumn[];
-};
-
 export type TenantPasswords = { readonly ro: string; readonly rw: string; readonly ddl: string };
 
 export type ProvisionInput = {
   readonly slug: string;
-  readonly proposal: CompanyProposal;
   readonly passwords: TenantPasswords;
 };
 
 export type ProvisionPlan = {
   readonly dbName: string;
   readonly roles: { readonly ro: string; readonly rw: string; readonly ddl: string };
-  readonly tables: readonly TenantTable[];
   /** Заведение базы. Отдельно от прочего: по нему решают, что убирать при отказе. */
   readonly createDatabase: string;
   readonly roleStatements: readonly string[];
@@ -72,20 +57,7 @@ export type ProvisionPlan = {
   readonly databaseStatements: readonly string[];
 };
 
-export type ProvisionError =
-  | { readonly kind: 'bad_slug'; readonly slug: string }
-  | { readonly kind: 'bad_name'; readonly name: string }
-  | { readonly kind: 'no_entities' };
-
-/** Тип столбца компании → тип Postgres. Деньги — numeric, не float: округление денег обязано быть точным. */
-const SQL_TYPE: Record<ColumnType, string> = {
-  text: 'text',
-  number: 'numeric',
-  money: 'numeric(14, 2)',
-  date: 'timestamptz',
-  bool: 'boolean',
-  ref: 'text',
-};
+export type ProvisionError = { readonly kind: 'bad_slug'; readonly slug: string };
 
 const IDENT = /^[a-z][a-z0-9_]{0,40}$/;
 
@@ -125,28 +97,8 @@ const migrationsTable = (): string =>
      applied_at timestamptz NOT NULL DEFAULT now()
    )`;
 
-const tableStatement = (table: TenantTable): string => {
-  const columns = table.columns.map((column) => `  ${q(column.name)} ${SQL_TYPE[column.type]}`).join(',\n');
-  return `CREATE TABLE IF NOT EXISTS app.${q(table.name)} (
-${columns}
-)`;
-};
-
 export const planProvision = (input: ProvisionInput): Result<ProvisionPlan, ProvisionError> => {
   if (!IDENT.test(input.slug)) return err({ kind: 'bad_slug', slug: input.slug });
-  if (input.proposal.entities.length === 0) return err({ kind: 'no_entities' });
-
-  // Имена таблиц и столбцов приводим к безопасному виду; после приведения проверяем
-  // ещё раз, потому что toSlug может вернуть пустое имя для нечитаемого входа.
-  const tables = input.proposal.entities.map((entity) => ({
-    name: toSlug(entity.name),
-    purpose: entity.purpose,
-    columns: entity.fields.map((field) => ({ name: toSlug(field.name), type: field.type, note: field.note })),
-  }));
-  const badName = tables
-    .flatMap((table) => [table.name, ...table.columns.map((column) => column.name)])
-    .find((name) => !IDENT.test(name));
-  if (badName !== undefined) return err({ kind: 'bad_name', name: badName });
 
   const dbName = `ss_${input.slug}`;
   const roles = {
@@ -182,7 +134,6 @@ export const planProvision = (input: ProvisionInput): Result<ProvisionPlan, Prov
     'CREATE SCHEMA IF NOT EXISTS ctx',
     ...ctxTables(),
     migrationsTable(),
-    ...tables.map(tableStatement),
     `GRANT USAGE ON SCHEMA ctx TO ${q(roles.ro)}, ${q(roles.rw)}, ${q(roles.ddl)}`,
     `GRANT SELECT ON ALL TABLES IN SCHEMA ctx TO ${q(roles.ro)}, ${q(roles.rw)}, ${q(roles.ddl)}`,
     `REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ctx FROM ${q(roles.ro)}, ${q(roles.rw)}, ${q(roles.ddl)}`,
@@ -195,5 +146,5 @@ export const planProvision = (input: ProvisionInput): Result<ProvisionPlan, Prov
     `ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${q(roles.rw)}`,
   ];
 
-  return ok({ dbName, roles, tables, createDatabase, roleStatements, databaseStatements });
+  return ok({ dbName, roles, createDatabase, roleStatements, databaseStatements });
 };

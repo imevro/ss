@@ -1,18 +1,18 @@
 /**
  * Живой поток. Два входа снаружи:
  *
- * - комната человеку: `GET /v1/rooms/:room` — онбординг и чат;
+ * - комната человеку: `GET /v1/rooms/:room` — чат;
  * - задания от воркера: `POST /v1/events/jobs` — что задача сделала.
  *
  * Воркер и API — разные процессы, поэтому вести поток может только тот, кто держит
  * соединение: воркер сообщает о работе, API передаёт это в комнату.
  *
- * Комната проверяется при входе: имя комнаты называет либо человека, либо чат,
+ * Комната проверяется при входе: имя комнаты называет чат,
  * и открывать её чужому нельзя — иначе переписка уходит наружу.
  */
 import { platformSql } from '@workspace/db';
 import type { ClientEvent } from '@workspace/types';
-import { conversationOfRoom, onboardingRoom } from '@workspace/types';
+import { conversationOfRoom } from '@workspace/types';
 import type { MiddlewareHandler } from 'hono';
 import { Hono } from 'hono';
 import { upgradeWebSocket, websocket } from 'hono/bun';
@@ -48,7 +48,6 @@ const guard: MiddlewareHandler = async (c, next) => {
 const mayEnterRoom = async (room: string, headers: Headers): Promise<boolean> => {
   const session = await auth.api.getSession({ headers });
   if (session === null) return false;
-  if (room === onboardingRoom(session.user.id)) return true;
   const conversationId = conversationOfRoom(room);
   if (conversationId === undefined) return false;
   // Чат лежит в базе своей компании, а по номеру чата компанию заранее не видно: спрашиваем
@@ -70,7 +69,7 @@ const companyHas = async (companyId: string, conversationId: string): Promise<bo
   return rows.length > 0;
 };
 
-/** Комната человеку: онбординг `onboarding:<человек>`, чат `conversation:<номер>`. */
+/** Комната человеку: `conversation:<номер чата>`. */
 liveRoutes.get(
   '/v1/rooms/:room',
   describeRoute({
@@ -79,11 +78,10 @@ liveRoutes.get(
     description: [
       'Подписка на события. Соединение переходит в вебсокет: обычный запрос сюда не годится.',
       '',
-      'Комнаты: `onboarding:<номер человека>` — готовое предложение таблиц;',
-      '`conversation:<номер чата>` — куски ответа агента и ход работы.',
+      'Комната: `conversation:<номер чата>` — куски ответа агента и ход работы.',
       '',
-      'Комнату открывает только её владелец: онбординг — сам человек, чат — владелец',
-      'её компании. Чужой запрос получает отказ и перехода не получает.',
+      'Комнату открывает только владелец её компании. Чужой запрос получает отказ',
+      'и перехода не получает.',
       '',
       'Требуется вход: комната открывается по печенью сессии, как и остальные пути.',
     ].join('\n'),
