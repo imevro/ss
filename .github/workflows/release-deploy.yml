@@ -1,0 +1,98 @@
+name: Release — deploy (nixos-rebuild switch)
+
+# Публикация выпуска на GitHub выкладывает на сервер. Рабочий агент стоит НА самой
+# машине (ep-infra, nixos/modules/ci-runner.nix), поэтому ключ доступа к серверу не
+# нужен ни GitHub, ни репозиторию.
+#
+# Агент кладёт дерево выпуска в /var/lib/ss/flake и просит систему выполнить
+# закреплённую службу ss-deploy.service через системную шину. Перед сборкой служба
+# не может менять: команда записана в конфигурации машины. Одно переключение
+# выпускает систему и приложение вместе: приложение собирается из этого дерева в
+# /nix/store, миграции проходят как ss-migrate, службы поднимаются с нового адреса.
+# Откат — одно поколение.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ github.event.release.tag_name }}
+    runs-on: [self-hosted, ss-vps]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Stage flake
+        # Ровно это дерево и ничего лишнего. node_modules не нужны: сборка ставит
+        # их сама из снимка зависимостей без сети. build/ панели тоже не нужен:
+        # его собирает та же сборка. --delete держит каталог равным выпуску.
+        run: |
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            --exclude='.data' \
+            --exclude='.turbo' \
+            --exclude='.worktrees' \
+            --exclude='apps/web/build' \
+            --exclude='apps/web/.react-router' \
+            "$GITHUB_WORKSPACE/" /var/lib/ss/flake/
+
+      - name: Activate (trigger privileged nixos-rebuild switch)
+        # --no-block: переключение идёт в области первого процесса. Если оно
+        # перезапустит самого агента, сборка всё равно доедет. Дальше опрашиваем
+        # состояние службы и показываем итог.
+        run: |
+          set -euo pipefail
+          echo "Triggering ss-deploy.service for ${{ github.event.release.tag_name }}"
+          systemctl start --no-block ss-deploy.service
+
+          for _ in $(seq 1 360); do
+            state="$(systemctl show ss-deploy.service -p ActiveState --value)"
+            [ "$state" = "activating" ] || [ "$state" = "active" ] || break
+            sleep 5
+          done
+
+          result="$(systemctl show ss-deploy.service -p Result --value)"
+          status="$(systemctl show ss-deploy.service -p ExecMainStatus --value)"
+          echo "ss-deploy: Result=$result ExecMainStatus=$status"
+          if [ "$result" != "success" ]; then
+            echo "::error::Deploy failed (Result=$result, ExecMainStatus=$status). Last logs:"
+            journalctl -u ss-deploy.service -n 150 --no-pager || true
+            exit 1
+          fi
+
+      - name: Smoke test
+        # Переключение возвращается, когда система только запустила службы; панели
+        # нужно несколько секунд, чтобы занять порт. Потому опрос, не одна попытка.
+        run: |
+          set -euo pipefail
+
+          code=000
+          for attempt in $(seq 1 30); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:5404/login || echo 000)"
+            if [ "$code" = "200" ]; then
+              echo "web :5404/login -> $code (attempt $attempt)"
+              break
+            fi
+            echo "web :5404/login -> $code (attempt $attempt/30) — not up yet"
+            sleep 2
+          done
+          if [ "$code" != "200" ]; then
+            echo "::error::web smoke failed ($code)"
+            exit 1
+          fi
+
+          curl -fsS --max-time 10 http://127.0.0.1:8787/health | grep -q '"ok":true'
+          echo "api :8787/health -> ok"
+          curl -fsS --max-time 10 http://127.0.0.1:6890/health >/dev/null
+          echo "queue :6890/health -> ok"
