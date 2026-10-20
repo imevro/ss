@@ -91,6 +91,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const me = await fetch(`${origin}/v1/me`, { headers });
   if (me.status === 401) throw redirect('/login');
   const who = (await me.json()) as { user: { id: string } };
+  // Компания уже есть — онбординг этому человеку не нужен и не должен
+  // открываться даже по прямой ссылке.
+  const list = await api<{ companies: readonly Company[] }>(`${origin}/v1/companies`, { headers });
+  if (list.companies.length > 0) throw redirect('/');
+
   const data = await api<{ steps: readonly Step[]; channels: readonly Channel[] }>(`${origin}/v1/onboarding/steps`, {
     headers,
   });
