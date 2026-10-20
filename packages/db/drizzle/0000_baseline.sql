@@ -1,3 +1,4 @@
+CREATE SEQUENCE "public"."agent_session_number" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE TABLE "account" (
 	"id" text PRIMARY KEY NOT NULL,
 	"account_id" text NOT NULL,
@@ -14,6 +15,31 @@ CREATE TABLE "account" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "apikey" (
+	"id" text PRIMARY KEY NOT NULL,
+	"config_id" text DEFAULT 'default' NOT NULL,
+	"name" text,
+	"start" text,
+	"reference_id" text NOT NULL,
+	"prefix" text,
+	"key" text NOT NULL,
+	"refill_interval" integer,
+	"refill_amount" integer,
+	"last_refill_at" timestamp with time zone,
+	"enabled" boolean DEFAULT true,
+	"rate_limit_enabled" boolean DEFAULT true,
+	"rate_limit_time_window" integer DEFAULT 86400000,
+	"rate_limit_max" integer DEFAULT 10,
+	"request_count" integer DEFAULT 0,
+	"remaining" integer,
+	"last_request" timestamp with time zone,
+	"expires_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"permissions" text,
+	"metadata" text
+);
+--> statement-breakpoint
 CREATE TABLE "session" (
 	"id" text PRIMARY KEY NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
@@ -23,6 +49,7 @@ CREATE TABLE "session" (
 	"ip_address" text,
 	"user_agent" text,
 	"user_id" text NOT NULL,
+	"active_organization_id" text,
 	CONSTRAINT "session_token_unique" UNIQUE("token")
 );
 --> statement-breakpoint
@@ -50,9 +77,7 @@ CREATE TABLE "agent_sessions" (
 	"id" text PRIMARY KEY NOT NULL,
 	"company_id" text NOT NULL,
 	"conversation_id" text NOT NULL,
-	"agent" text DEFAULT 'company' NOT NULL,
 	"gentic_key" text NOT NULL,
-	"status" text DEFAULT 'idle' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -71,38 +96,6 @@ CREATE TABLE "apps" (
 	CONSTRAINT "apps_slug_unique" UNIQUE("slug")
 );
 --> statement-breakpoint
-CREATE TABLE "audit_log" (
-	"id" text PRIMARY KEY NOT NULL,
-	"company_id" text,
-	"actor_kind" text DEFAULT 'user' NOT NULL,
-	"actor_id" text,
-	"action" text NOT NULL,
-	"target_type" text,
-	"target_id" text,
-	"meta" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "chat_bindings" (
-	"id" text PRIMARY KEY NOT NULL,
-	"company_id" text NOT NULL,
-	"channel" text DEFAULT 'telegram' NOT NULL,
-	"chat_id" text NOT NULL,
-	"title" text,
-	"bound_by" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "companies" (
-	"id" text PRIMARY KEY NOT NULL,
-	"name" text NOT NULL,
-	"slug" text NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
-	"settings" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "companies_slug_unique" UNIQUE("slug")
-);
---> statement-breakpoint
 CREATE TABLE "company_databases" (
 	"id" text PRIMARY KEY NOT NULL,
 	"company_id" text NOT NULL,
@@ -117,32 +110,45 @@ CREATE TABLE "company_databases" (
 	CONSTRAINT "company_databases_db_name_unique" UNIQUE("db_name")
 );
 --> statement-breakpoint
-CREATE TABLE "flags" (
+CREATE TABLE "invitation" (
 	"id" text PRIMARY KEY NOT NULL,
-	"company_id" text NOT NULL,
-	"key" text NOT NULL,
-	"value" boolean DEFAULT false NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "invites" (
-	"id" text PRIMARY KEY NOT NULL,
-	"company_id" text NOT NULL,
+	"organization_id" text NOT NULL,
 	"email" text NOT NULL,
 	"role" text DEFAULT 'member' NOT NULL,
-	"token" text NOT NULL,
+	"status" text DEFAULT 'pending' NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
-	"accepted_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "invites_token_unique" UNIQUE("token")
+	"inviter_id" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "memberships" (
+CREATE TABLE "member" (
 	"id" text PRIMARY KEY NOT NULL,
-	"company_id" text NOT NULL,
+	"organization_id" text NOT NULL,
 	"user_id" text NOT NULL,
-	"role" text DEFAULT 'owner' NOT NULL,
+	"role" text DEFAULT 'member' NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "organization" (
+	"id" text PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"slug" text NOT NULL,
+	"logo" text,
+	"metadata" text,
 	"status" text DEFAULT 'active' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "organization_slug_unique" UNIQUE("slug")
+);
+--> statement-breakpoint
+CREATE TABLE "user_onboarding" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"company_id" text,
+	"answers" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"proposal" jsonb,
+	"status" text DEFAULT 'started' NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "ctx_steps" (
@@ -168,21 +174,25 @@ CREATE TABLE "ctx_steps" (
 --> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agent_sessions" ADD CONSTRAINT "agent_sessions_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "apps" ADD CONSTRAINT "apps_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "chat_bindings" ADD CONSTRAINT "chat_bindings_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "company_databases" ADD CONSTRAINT "company_databases_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "invites" ADD CONSTRAINT "invites_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "memberships" ADD CONSTRAINT "memberships_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_sessions" ADD CONSTRAINT "agent_sessions_company_id_organization_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "apps" ADD CONSTRAINT "apps_company_id_organization_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "company_databases" ADD CONSTRAINT "company_databases_company_id_organization_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invitation" ADD CONSTRAINT "invitation_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "member" ADD CONSTRAINT "member_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "account_user_idx" ON "account" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "account_provider_account" ON "account" USING btree ("provider_id","account_id");--> statement-breakpoint
+CREATE INDEX "apikey_config_idx" ON "apikey" USING btree ("config_id");--> statement-breakpoint
+CREATE INDEX "apikey_reference_idx" ON "apikey" USING btree ("reference_id");--> statement-breakpoint
+CREATE INDEX "apikey_hash_idx" ON "apikey" USING btree ("key");--> statement-breakpoint
 CREATE INDEX "session_user_idx" ON "session" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "verification_identifier_idx" ON "verification" USING btree ("identifier");--> statement-breakpoint
-CREATE INDEX "agent_sessions_company_conversation" ON "agent_sessions" USING btree ("company_id","conversation_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "agent_sessions_company_conversation" ON "agent_sessions" USING btree ("company_id","conversation_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "agent_sessions_gentic_key" ON "agent_sessions" USING btree ("gentic_key");--> statement-breakpoint
 CREATE INDEX "apps_company" ON "apps" USING btree ("company_id");--> statement-breakpoint
-CREATE INDEX "audit_log_company_at" ON "audit_log" USING btree ("company_id","at");--> statement-breakpoint
-CREATE UNIQUE INDEX "chat_bindings_channel_chat" ON "chat_bindings" USING btree ("channel","chat_id");--> statement-breakpoint
-CREATE INDEX "company_databases_company" ON "company_databases" USING btree ("company_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "memberships_company_user" ON "memberships" USING btree ("company_id","user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "company_databases_company" ON "company_databases" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "invitation_org_email_status" ON "invitation" USING btree ("organization_id","email","status");--> statement-breakpoint
+CREATE UNIQUE INDEX "member_organization_user" ON "member" USING btree ("organization_id","user_id");--> statement-breakpoint
+CREATE INDEX "member_user_status" ON "member" USING btree ("user_id","status");--> statement-breakpoint
+CREATE UNIQUE INDEX "user_onboarding_user" ON "user_onboarding" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "ctx_steps_run_idx" ON "ctx_steps" USING btree ("run_id","created_at");--> statement-breakpoint
 CREATE INDEX "ctx_steps_company_idx" ON "ctx_steps" USING btree ("company_id","created_at");

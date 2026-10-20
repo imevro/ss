@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Пересобрать bun.nix из bun.lock после смены зависимостей.
+# По этому файлу ep-infra собирает приложение для сервера: старые хеши — сборка
+# не встанет. Запускать после bun install / правки package.json.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+bunx bun2nix@2.1.2 -o bun.nix
+echo "bun.nix: $(wc -l < bun.nix) строк"
