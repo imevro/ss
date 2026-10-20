@@ -27,6 +27,10 @@ const READERS: Readonly<Record<string, (frame: Record<string, unknown>, room: st
     return { kind: 'started', conversationId: room, messageId: frame.messageId };
   },
   thought: (_frame, room) => ({ kind: 'thought', conversationId: room }),
+  log: (frame, room) => {
+    if (typeof frame.line !== 'string') return;
+    return { kind: 'log', conversationId: room, line: frame.line };
+  },
   chunk: (frame, room) => {
     if (typeof frame.text !== 'string') return;
     return { kind: 'chunk', conversationId: room, text: frame.text };

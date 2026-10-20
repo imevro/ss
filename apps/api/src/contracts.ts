@@ -105,6 +105,11 @@ export const clientEventSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('thought'), conversationId: z.string() }),
   z.object({
+    kind: z.literal('log'),
+    conversationId: z.string(),
+    line: z.string().meta({ description: 'Строка из потока ошибок агента.' }),
+  }),
+  z.object({
     kind: z.literal('done'),
     conversationId: z.string(),
     messageId: z.string().optional().meta({ description: 'Номер записи ответа.' }),

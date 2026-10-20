@@ -34,6 +34,8 @@ export type ClientEvent =
       readonly messageId?: string;
     }
   | { readonly kind: 'chunk'; readonly conversationId: string; readonly text: string }
+  /** Строка из потока ошибок агента: он один знает, почему ход не состоялся. */
+  | { readonly kind: 'log'; readonly conversationId: string; readonly line: string }
   /** Название чата: приходит, как только модель его придумала. */
   | { readonly kind: 'titled'; readonly conversationId: string; readonly title: string }
   | {

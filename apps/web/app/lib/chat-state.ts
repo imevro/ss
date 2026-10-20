@@ -55,11 +55,13 @@ export type ChatState = {
   /** Сколько ходов агента началось: номер реплики берётся отсюда. */
   readonly turns: number;
   readonly problem: string;
+  /** Последняя строка агента из потока ошибок: он один знает, что стряслось. */
+  readonly note: string;
   /** Номер реплики, которая собирается сейчас. Она же — номер её записи в базе. */
   readonly liveId: string | null;
 };
 
-const emptyState = (): ChatState => ({ messages: [], work: null, turns: 0, problem: '', liveId: null });
+const emptyState = (): ChatState => ({ messages: [], work: null, turns: 0, problem: '', note: '', liveId: null });
 
 /** Запись ленты с сервера. Сырое поле несёт ход работы ответа. */
 export type StoredRow = {
@@ -227,6 +229,9 @@ const step = (state: ChatState, entry: LogEntry): ChatState => {
   }
   if (event.kind === 'chunk') {
     return withLive(state, entry.at, (message) => withText(message, event.text));
+  }
+  if (event.kind === 'log') {
+    return { ...state, note: event.text };
   }
   if (event.kind === 'failed') {
     return { ...endedWork(state, entry.at), problem: event.reason };

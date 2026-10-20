@@ -411,6 +411,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
         </header>
 
         {shownProblem !== '' && <p className="shrink-0 px-6 py-2 text-destructive">{shownProblem}</p>}
+        {log.state.note !== '' && <p className="shrink-0 truncate px-6 py-1 text-muted-foreground">{log.state.note}</p>}
 
         {activeApp !== undefined && activeApp.url === null && (
           <div className="flex flex-1 items-center justify-center px-6">
@@ -501,6 +502,7 @@ const eventOfRoom = (event: ClientEvent): ChatEvent => {
   if (event.kind === 'chunk') return { kind: 'chunk', text: event.text };
   if (event.kind === 'live') return { kind: 'live', calls: event.calls, thinking: event.thinking };
   if (event.kind === 'thought') return { kind: 'thought' };
+  if (event.kind === 'log') return { kind: 'log', text: event.line };
   if (event.kind === 'failed') return { kind: 'failed', reason: event.reason };
   return { kind: 'ended' };
 };

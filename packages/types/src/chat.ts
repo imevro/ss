@@ -62,6 +62,7 @@ export type ChatEvent =
   | { readonly kind: 'chunk'; readonly text: string }
   | { readonly kind: 'live'; readonly calls: readonly ToolCall[]; readonly thinking: boolean }
   | { readonly kind: 'thought' }
+  | { readonly kind: 'log'; readonly text: string }
   | { readonly kind: 'failed'; readonly reason: string }
   | { readonly kind: 'ended'; readonly messageId?: string };
 
