@@ -9,3 +9,5 @@
 - [`gotcha-staryi-process-derzhit-port`](gotcha-staryi-process-derzhit-port.md) — порт 8787 держит вчерашний процесс: проверка отвечает старым кодом, новая копия падает с EADDRINUSE.
 - [`how-podnimaetsya-stek-dlya-zhivoy-proverki`](how-podnimaetsya-stek-dlya-zhivoy-proverki.md) — стек поднимается тремя вещами: база в докере, отдельный брокер очереди, API и веб из `bun run dev`.
 - [`gotcha-generator-vstaet-na-podskazke`](gotcha-generator-vstaet-na-podskazke.md) — `db:generate` спрашивает человека о переименовании старых таблиц и без терминала не пишет файл.
+- [`gotcha-odin-token-odin-webhook`](gotcha-odin-token-odin-webhook.md) — у ключа бота один вебхук: ключ бота не кладут на борд без чатов, иначе выкладка уводит обновления.
+- [`gotcha-udalennyi-secret-zhivet-v-versii-mashiny`](gotcha-udalennyi-secret-zhivet-v-versii-mashiny.md) — снятый секрет остаётся в версии машины Fly; очищает только пересоздание машины.

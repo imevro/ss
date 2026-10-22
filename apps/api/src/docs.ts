@@ -83,7 +83,7 @@ export const documentOf = (): Partial<GenerateSpecOptions> => ({
       { url: '{scheme}://{host}', variables: { scheme: { default: 'http' }, host: { default: 'localhost:8787' } } },
     ],
     tags: [
-      { name: 'onboarding', description: 'Четыре вопроса и предложение таблиц.' },
+      { name: 'onboarding', description: 'Три вопроса: название, чем занимается, приглашения.' },
       { name: 'companies', description: 'Компания, её база и её миниаппы.' },
       { name: 'conversations', description: 'Чаты с агентом: список, лента, живые кадры.' },
       {

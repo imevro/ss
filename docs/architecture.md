@@ -2,7 +2,7 @@
 
 > Статус: план на 0.2 и дальше; выпуск 0.1 уже в коде — см. `packages/*` и `README.md`.
 > Имена задач очереди в этом плане (`db.provision`, `msg.ingest`, `app.build`) и транспорт
-> к gentic (`SSE`) — плановые: в 0.1 работают `onboarding:proposal` и `db:provision`, а
+> к gentic (`SSE`) — плановые: в 0.1 работает `db:provision`, а
 > живой поток идёт вебсокетами. Таблицы в §3 и §6.1 — тоже план: в 0.1 компанию держат
 > `organization`/`member`/`invitation` (схема плагина better-auth, `packages/db/src/companies.ts`),
 > а переписку — `ctx.conversations`/`ctx.messages` в базе компании (`packages/companies/src/plan.ts`).

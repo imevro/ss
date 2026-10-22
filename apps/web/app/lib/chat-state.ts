@@ -193,6 +193,7 @@ const step = (state: ChatState, entry: LogEntry): ChatState => {
       ],
       work: null,
       problem: '',
+      note: '',
       liveId: null,
     };
   }

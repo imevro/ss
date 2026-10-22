@@ -16,11 +16,6 @@ const optional = (name: string, fallback: string): string => {
 
 export const config = {
   databaseUrl: required('DATABASE_URL'),
-  llmBaseUrl: required('LLM_BASE_URL'),
-  llmApiKey: required('LLM_API_KEY'),
-  llmModel: required('LLM_MODEL'),
-  apiUrl: optional('API_URL', 'http://127.0.0.1:8787'),
-  workerToken: optional('WORKER_TOKEN', ''),
   brokerHost: optional('BUNQUEUE_HOST', '127.0.0.1'),
   brokerPort: Number(optional('BUNQUEUE_PORT', '6789')),
 } as const;

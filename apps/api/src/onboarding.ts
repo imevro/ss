@@ -117,7 +117,7 @@ onboarding.post(
     const body = await bodyOf(c);
     if (body === undefined) return problem(c, 400, 'bad_request', 'не понимаю запрос');
     const parsed = newCompanyOf(body);
-    if (parsed === undefined) return problem(c, 400, 'bad_request', 'нужно название компании');
+    if (parsed === undefined) return problem(c, 400, 'bad_request', 'нужны название и описание компании');
 
     const created = await createCompany({ ...parsed, headers: c.req.raw.headers });
     // Пустая вставка — сбой сервера: говорить «твой запрос плох» тут значило бы соврать.
@@ -202,5 +202,8 @@ const newCompanyOf = (body: unknown): NewCompanyInput | undefined => {
   const record = body as Record<string, unknown>;
   const name = record.name;
   if (typeof name !== 'string' || name.trim() === '') return;
-  return { name: name.trim(), business: textOf(record.business), invites: asStringList(record.invites) };
+  // «Чем занимается» — обязательный вопрос шага, поэтому и здесь он обязателен.
+  const business = textOf(record.business);
+  if (business === '') return;
+  return { name: name.trim(), business, invites: asStringList(record.invites) };
 };

@@ -344,4 +344,12 @@ describe('сведение журнала', () => {
       'assistant:Привет',
     ]);
   });
+
+  test('строка агента живёт до следующего вопроса, а не до конца сеанса', () => {
+    // Строка из потока ошибок относится к своему ходу: новый вопрос её снимает.
+    const seen = fold(log([{ kind: 'started' }, { kind: 'log', text: 'ошибка провайдера' }]));
+    expect(seen.note).toBe('ошибка провайдера');
+    const next = fold(log([{ kind: 'started' }, { kind: 'log', text: 'ошибка' }, ask('m1', 'ещё раз')]));
+    expect(next.note).toBe('');
+  });
 });

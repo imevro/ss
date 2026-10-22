@@ -32,7 +32,7 @@ export default function Companies({ loaderData }: Route.ComponentProps) {
       {loaderData.companies.length === 0 ? (
         <div className="flex flex-col gap-3 px-4">
           <p className="text-muted-foreground">Доступных компаний нет.</p>
-          <a className="text-sm underline" href="/onboarding">
+          <a className="underline" href="/onboarding">
             Завести компанию
           </a>
         </div>

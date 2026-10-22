@@ -53,7 +53,7 @@ export const LIVE_ID = 'live';
 
 /**
  * Событие чата. Из комнаты приходят `started`, `chunk`, `live`, `thought`,
- * `failed` и `done` (ложится в `ended`); `ask` и `asked` ставит сама страница.
+ * `log`, `failed` и `done` (ложится в `ended`); `ask` и `asked` ставит сама страница.
  */
 export type ChatEvent =
   | { readonly kind: 'ask'; readonly id: string; readonly text: string; readonly at: string }
