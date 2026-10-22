@@ -57,19 +57,6 @@
         "vite": "^8",
       },
     },
-    "apps/worker": {
-      "name": "@workspace/worker",
-      "version": "0.0.1",
-      "dependencies": {
-        "@workspace/companies": "workspace:*",
-        "@workspace/db": "workspace:*",
-        "@workspace/log": "workspace:*",
-        "@workspace/types": "workspace:*",
-        "bunqueue": "^2.9.6",
-        "drizzle-orm": "^0.45.3",
-        "postgres": "^3.4.9",
-      },
-    },
     "packages/companies": {
       "name": "@workspace/companies",
       "version": "0.0.1",
@@ -624,8 +611,6 @@
     "@workspace/types": ["@workspace/types@workspace:packages/types"],
 
     "@workspace/ui": ["@workspace/ui@workspace:packages/ui"],
-
-    "@workspace/worker": ["@workspace/worker@workspace:apps/worker"],
 
     "@xsai/embed": ["@xsai/embed@0.5.1", "", { "dependencies": { "@xsai/shared": "0.5.1" } }, "sha512-FUeEj31Q1f90NQ5N/JpAqFSubunJZWYpmvk+StZ8D9eSc5BZkTFtU9eZuSmTAgZlKj7phcw1WH6SoPQYqiwm9w=="],
 
