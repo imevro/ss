@@ -12,7 +12,6 @@ export type IdKind =
   | 'organization'
   | 'member'
   | 'invitation'
-  | 'companyDatabase'
   | 'agentSession'
   | 'app'
   | 'user'
@@ -29,7 +28,6 @@ const PREFIX: Record<IdKind, string> = {
   organization: 'comp',
   member: 'memb',
   invitation: 'inv',
-  companyDatabase: 'cdb',
   agentSession: 'asess',
   app: 'app',
   user: 'usr',

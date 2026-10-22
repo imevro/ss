@@ -1179,7 +1179,6 @@
   "@workspace/log" = copyPathToStore ./packages/log;
   "@workspace/types" = copyPathToStore ./packages/types;
   "@workspace/ui" = copyPathToStore ./packages/ui;
-  "@workspace/worker" = copyPathToStore ./apps/worker;
   "@xsai/embed@0.5.1" = fetchurl {
     url = "https://registry.npmjs.org/@xsai/embed/-/embed-0.5.1.tgz";
     hash = "sha512-FUeEj31Q1f90NQ5N/JpAqFSubunJZWYpmvk+StZ8D9eSc5BZkTFtU9eZuSmTAgZlKj7phcw1WH6SoPQYqiwm9w==";

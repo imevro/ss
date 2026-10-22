@@ -11,7 +11,6 @@
     "db:generate": "cd packages/db && bun x drizzle-kit generate",
     "db:migrate": "cd packages/db && bun x drizzle-kit migrate",
     "db": "docker compose exec -T db psql -U ss -d ss_core",
-    "broker": "bun run --cwd apps/worker broker",
     "lint": "biome check .",
     "lint:fix": "biome check --write ."
   },

@@ -41,7 +41,13 @@ const url = urlOf(process.env.DATABASE_URL, fromFile.DATABASE_URL);
 // Пути относительные: drizzle-kit не принимает абсолютные. Запускать из packages/postgres.
 export default defineConfig({
   dialect: 'postgresql',
-  schema: ['./src/auth.ts', './src/companies.ts', './src/onboarding.ts', '../log/src/schema.ts'],
+  schema: [
+    './src/auth.ts',
+    './src/companies.ts',
+    './src/conversations.ts',
+    './src/onboarding.ts',
+    '../log/src/schema.ts',
+  ],
   out: './drizzle',
   dbCredentials: { url },
 });

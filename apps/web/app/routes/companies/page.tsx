@@ -1,5 +1,4 @@
-import { Badge } from '@workspace/ui/components/badge';
-import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from '@workspace/ui/components/item';
+import { Item, ItemContent, ItemGroup, ItemTitle } from '@workspace/ui/components/item';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/page';
@@ -9,7 +8,7 @@ import { noindexMeta } from '@/lib/page-title';
 
 export const meta = () => noindexMeta(['Компании'], 'Компании, к которым у вас есть доступ.');
 
-type Company = { readonly id: string; readonly slug: string; readonly name: string; readonly database: string };
+type Company = { readonly id: string; readonly slug: string; readonly name: string };
 
 /**
  * Список компаний — своя дверь в панель. Он открывается всегда, даже когда
@@ -28,25 +27,22 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function Companies({ loaderData }: Route.ComponentProps) {
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 p-6 py-16">
-      <h1 className="px-4 font-heading font-medium text-2xl">Компании</h1>
+      <div className="flex items-center justify-between gap-4 px-4">
+        <h1 className="font-heading font-medium text-2xl">Компании</h1>
+        {/* Компаний может быть сколько угодно: завод новой не закрыт после первой. */}
+        <a className="underline" href="/onboarding">
+          Завести компанию
+        </a>
+      </div>
       {loaderData.companies.length === 0 ? (
-        <div className="flex flex-col gap-3 px-4">
-          <p className="text-muted-foreground">Доступных компаний нет.</p>
-          <a className="underline" href="/onboarding">
-            Завести компанию
-          </a>
-        </div>
+        <p className="px-4 text-muted-foreground">Доступных компаний нет.</p>
       ) : (
         <ItemGroup>
           {loaderData.companies.map((company) => (
             <Item key={company.id} render={<a href={companyAddress(company.slug)}>{company.name}</a>}>
               <ItemContent>
                 <ItemTitle>{company.name}</ItemTitle>
-                <ItemDescription>База компании</ItemDescription>
               </ItemContent>
-              <ItemActions>
-                <Badge variant="outline">{company.database}</Badge>
-              </ItemActions>
             </Item>
           ))}
         </ItemGroup>

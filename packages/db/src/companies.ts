@@ -76,31 +76,9 @@ export const invitation = pgTable(
   (t) => [index('invitation_org_email_status').on(t.organizationId, t.email, t.status)],
 );
 
-/** Реестр выписанных баз: единственный источник правды о том, у кого какая база. */
-export const companyDatabases = pgTable(
-  'company_databases',
-  {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => newId('companyDatabase')),
-    companyId: text('company_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    dbName: text('db_name').notNull().unique(),
-    roles: jsonb('roles').notNull(),
-    cluster: text('cluster').notNull().default('local'),
-    status: text('status').notNull().default('provisioning'),
-    provisionedAt: timestamp('provisioned_at', { withTimezone: true }),
-    suspendedAt: timestamp('suspended_at', { withTimezone: true }),
-    droppedAt: timestamp('dropped_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  // Одна база на компанию. Уникальность — не удобство, а охрана: повторная выписка
-  // должна упереться в отказ, а не завести вторую запись о той же компании.
-  (t) => [uniqueIndex('company_databases_company').on(t.companyId)],
-);
-
-/** Сессия агента: связка чата с процессом gentic. Ключ сессии живёт у gentic. */
+/**
+ * Сессия агента: связка чата с процессом gentic. Ключ сессии живёт у gentic.
+ */
 export const agentSessions = pgTable(
   'agent_sessions',
   {

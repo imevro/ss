@@ -7,8 +7,7 @@
  * хранится в реестре: у одного чата один ключ, у разных — разные.
  */
 import { chatTitle } from '@workspace/companies';
-import type { Sql } from '@workspace/db';
-import { agentSessions, db, newId, platformSql } from '@workspace/db';
+import { agentSessions, conversations as chatTable, db, messages, newId } from '@workspace/db';
 import { createLogger, logStep } from '@workspace/log';
 import type { StoredWork, ToolCall } from '@workspace/types';
 import { conversationRoom } from '@workspace/types';
@@ -148,34 +147,22 @@ type TurnState = {
 /** Сколько кусков копим между записями: чаще — лишние записи, реже — больше терять. */
 const WRITE_EVERY_CHUNKS = 25;
 
-/** База компании по её номеру. Базы нет — это не «нечего писать», а поломка схемы. */
-const tenantOf = async (companyId: string): Promise<Sql> => {
-  const tenant = await platformSql(companyId);
-  if (tenant === undefined) throw new Error(`у компании ${companyId} нет базы: писать некуда`);
-  return tenant;
-};
-
 /**
  * Запись ответа заводится с началом хода и обновляется по ходу. Поэтому у хода есть
  * место в ленте с первой секунды, а страница, обновлённая посреди хода, читает его из
  * базы: второй правды на стороне браузера нет.
  */
-const openTurn = async (companyId: string, conversationId: string, messageId: string): Promise<void> => {
-  const tenant = await tenantOf(companyId);
+const openTurn = async (conversationId: string, messageId: string): Promise<void> => {
   // Начало хода кладём сразу: даже обновление в первую секунду показывает, что ход идёт.
   const work: StoredWork = { seconds: 0, thoughts: 0, calls: [], thinking: true, endedAt: null };
-  await tenant`
-    INSERT INTO ctx.messages (id, conversation_id, role, text, raw)
-    VALUES (${messageId}, ${conversationId}, ${'assistant'}, ${''}, ${rawOf(work)}::text::jsonb)
-  `;
+  await db.insert(messages).values({
+    id: messageId,
+    conversationId,
+    role: 'assistant',
+    text: '',
+    raw: { work },
+  });
 };
-
-/**
- * Сырое поле записи: ход работы под ключом `work`, строкой байтов JSON. Приведение
- * в SQL двойное (`::text::jsonb`): без первого драйвер отдаёт строку как готовый JSON,
- * и база хранит её строкой, а не разбирает в объект.
- */
-const rawOf = (work: StoredWork): string => JSON.stringify({ work });
 
 /** Думает ли ход: законченный ход уже не думает. */
 const thinkingOf = (ended: boolean, thinking: boolean): boolean => {
@@ -190,14 +177,7 @@ const endedAtOf = (ended: boolean): string | null => {
 };
 
 /** Шаг хода лёг в запись: текст, ход работы и признак конца. */
-const writeTurn = async (
-  companyId: string,
-  messageId: string,
-  startedAt: number,
-  state: TurnState,
-  ended: boolean,
-): Promise<void> => {
-  const tenant = await tenantOf(companyId);
+const writeTurn = async (messageId: string, startedAt: number, state: TurnState, ended: boolean): Promise<void> => {
   const work: StoredWork = {
     // Работа была, раз ответ пришёл: показываем хотя бы секунду, а не «0s».
     seconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
@@ -207,16 +187,12 @@ const writeTurn = async (
     // Конец хода. У идущего его нет — по нему видно, что ход ещё идёт.
     endedAt: endedAtOf(ended),
   };
-  const raw = rawOf(work);
-  await tenant`
-    UPDATE ctx.messages SET text = ${state.text}, raw = ${raw}::text::jsonb WHERE id = ${messageId}
-  `;
+  await db.update(messages).set({ text: state.text, raw: { work } }).where(eq(messages.id, messageId));
 };
 
 /** Ход без ответа: пустая запись в ленте не нужна — убираем её. */
-const dropTurn = async (companyId: string, messageId: string): Promise<void> => {
-  const tenant = await tenantOf(companyId);
-  await tenant`DELETE FROM ctx.messages WHERE id = ${messageId}`;
+const dropTurn = async (messageId: string): Promise<void> => {
+  await db.delete(messages).where(eq(messages.id, messageId));
 };
 
 /**
@@ -280,7 +256,7 @@ export const askAgent = async (companyId: string, conversationId: string, questi
 
   /** Запись догоняет ход. Ответы записи держим: конец хода ложится последним. */
   const tell = (ended: boolean): void => {
-    record(writeTurn(companyId, messageId, startedAt, stateOf(), ended));
+    record(writeTurn(messageId, startedAt, stateOf(), ended));
   };
 
   /** Ход закончен: закрываем соединение и отдаём ответ наружу. */
@@ -307,7 +283,7 @@ export const askAgent = async (companyId: string, conversationId: string, questi
   });
 
   socket.addEventListener('open', () => {
-    record(openTurn(companyId, conversationId, messageId));
+    record(openTurn(conversationId, messageId));
     say(room, { kind: 'started', conversationId, messageId });
     socket.send(JSON.stringify({ kind: 'ask', text: question }));
   });
@@ -365,8 +341,6 @@ export const askAgent = async (companyId: string, conversationId: string, questi
  */
 const nameChat = async (companyId: string, conversationId: string, question: string): Promise<void> => {
   try {
-    const tenant = await platformSql(companyId);
-    if (tenant === undefined) return;
     // Шаг открываем до обращения: строка есть, пока модель думает. Расход ложится в неё.
     const step = await logStep.start({
       ctx: { runId: conversationId, companyId, agent: 'agent:title', model: config.llmModel },
@@ -386,9 +360,7 @@ const nameChat = async (companyId: string, conversationId: string, question: str
     }
     const title = titled.value.answer.title;
     await step.finish({ output: { title }, tokens: titled.value.usage });
-    await tenant`
-      UPDATE ctx.conversations SET title = ${title} WHERE id = ${conversationId}
-    `;
+    await db.update(chatTable).set({ title }).where(eq(chatTable.id, conversationId));
     say(conversationRoom(conversationId), { kind: 'titled', conversationId, title });
   } catch (error) {
     log.error('название чата не записано', { companyId, conversationId, error: String(error) });
@@ -468,7 +440,7 @@ const turnOf = async (companyId: string, conversationId: string, question: strin
     }
     if (answer.text === '') {
       // Пустая запись в ленте не нужна: ход не состоялся.
-      await dropTurn(companyId, answer.messageId);
+      await dropTurn(answer.messageId);
       say(room, { kind: 'failed', conversationId, reason: 'агент не ответил' });
       return;
     }
@@ -478,8 +450,8 @@ const turnOf = async (companyId: string, conversationId: string, question: strin
       say(room, { kind: 'failed', conversationId, reason: 'ответ агента не записан' });
       return;
     }
-    await writeTurn(companyId, answer.messageId, answer.startedAt, answer.state, true);
-    await touchConversation(companyId, conversationId);
+    await writeTurn(answer.messageId, answer.startedAt, answer.state, true);
+    await touchConversation(conversationId);
     log.info('ответ агента записан', { companyId, conversationId, length: answer.text.length });
     // Номер записи уходит странице: по нему её собранная реплика уступает записанной.
     say(room, { kind: 'done', conversationId, messageId: answer.messageId });
@@ -490,9 +462,6 @@ const turnOf = async (companyId: string, conversationId: string, question: strin
 };
 
 /** Список чатов замечает ход по времени последней записи. */
-const touchConversation = async (companyId: string, conversationId: string): Promise<void> => {
-  const tenant = await tenantOf(companyId);
-  await tenant`
-    UPDATE ctx.conversations SET last_message_at = now() WHERE id = ${conversationId}
-  `;
+const touchConversation = async (conversationId: string): Promise<void> => {
+  await db.update(chatTable).set({ lastMessageAt: new Date() }).where(eq(chatTable.id, conversationId));
 };

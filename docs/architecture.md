@@ -1,13 +1,12 @@
 # ss — s.solutions. Архитектура (салфетка)
 
 > Статус: план на 0.2 и дальше; выпуск 0.1 уже в коде — см. `packages/*` и `README.md`.
-> Имена задач очереди в этом плане (`db.provision`, `msg.ingest`, `app.build`) и транспорт
-> к gentic (`SSE`) — плановые: в 0.1 работает `db:provision`, а
+> Имена задач очереди в этом плане (`msg.ingest`, `app.build`) и транспорт
+> к gentic (`SSE`) — плановые: в 0.1 очереди нет, а
 > живой поток идёт вебсокетами. Таблицы в §3 и §6.1 — тоже план: в 0.1 компанию держат
 > `organization`/`member`/`invitation` (схема плагина better-auth, `packages/db/src/companies.ts`),
-> а переписку — `ctx.conversations`/`ctx.messages` в базе компании (`packages/companies/src/plan.ts`).
-> Один Postgres, один API, один воркер,
-> один процесс ботов, одно веб-приложение. Всё остальное — следствия.
+> а переписку — `conversations`/`messages` в общей базе (`packages/db/src/conversations.ts`).
+> Один Postgres, один API, одно веб-приложение. Всё остальное — следствия.
 >
 > Снято 2026-10-05: телеграм-приём в это ядро не завозим. Ботов заводят сами кланкеры,
 > данные кладут туда, где выберут. См. `bot-on-cloudflare.md`.
@@ -99,13 +98,9 @@
 ```mermaid
 flowchart LR
   TG[Telegram чаты] -->|webhook| API[apps/api]
-  API --> Q[(bunqueue)]
-  Q --> W[apps/worker]
-  W --> CORE[(ядро: контекст, права)]
   API -->|HTTP + SSE| G[gentic]
   G -->|Mirage| DB[(база компании)]
   G -->|инструменты| API
-  W -->|deploy| SP[спрайт на апп]
   BROWSER[браузер] -->|адрес аппа| SP
   BROWSER -->|вход ss id| ID[id.s.solutions]
   SP -->|данные по согласию| API
@@ -166,8 +161,6 @@ ss/
   apps/api/         Hono, два хоста: api.s.solutions и id.s.solutions (сервер авторизации ss id).
                     Пути: /v1/ingest/telegram, /v1/ask, /v1/runs, /v1/changes, /v1/apps,
                     /v1/app-data, /v1/admin, /v1/tools, /oauth2/*
-  apps/worker/      консьюмеры bunqueue: msg.ingest, msg.enrich, digest.rollup, db.provision,
-                    db.migrate, db.backup, db.suspend, app.build, app.reap, retention.gc
   apps/bot/         телеграм-боты: приём вебхуков, личка = вопрос
   apps/web/         кабинет: компании, сотрудники, доступы агентов, очередь правок, маркетплейс
   packages/core/    чистое ядро. Ноль импортов из db/queue/http/telegram

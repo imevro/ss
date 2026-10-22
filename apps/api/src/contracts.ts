@@ -143,12 +143,6 @@ export const companyBodySchema = z.object({
   invites: z.array(z.string()).meta({ description: 'Адреса приглашений.' }),
 });
 
-export const jobEventBodySchema = z.object({
-  room: z.string().meta({ description: 'Имя комнаты.' }),
-  event: clientEventSchema,
-});
-
-export const jobSchema = z.object({ jobId: z.string().meta({ description: 'Номер задачи в очереди.' }) });
 export const okSchema = z.object({ ok: z.boolean() });
 
 /**

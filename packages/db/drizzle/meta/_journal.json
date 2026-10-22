@@ -15,6 +15,13 @@
       "when": 1792496933613,
       "tag": "0001_onboarding_three_questions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792684589838,
+      "tag": "0002_conversations_in_core",
+      "breakpoints": true
     }
   ]
 }

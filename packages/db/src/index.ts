@@ -7,9 +7,9 @@ import postgres from 'postgres';
 
 export * from './auth';
 export * from './companies';
+export * from './conversations';
 export * from './ids';
 export * from './onboarding';
-export * from './tenant';
 
 const url = process.env.DATABASE_URL;
 if (url === undefined) throw new Error('DATABASE_URL не задан');

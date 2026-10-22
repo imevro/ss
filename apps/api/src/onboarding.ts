@@ -12,18 +12,10 @@ import { describeRoute, resolver } from 'hono-openapi';
 import { z } from 'zod';
 
 import { auth } from './auth';
-import { createCompany, databaseOf, findCompany, isMemberOf } from './companies';
-import {
-  answerBodySchema,
-  companyBodySchema,
-  companySchema,
-  jobSchema,
-  onboardingSchema,
-  stepSchema,
-} from './contracts';
-import { badRequest, bodyOf, conflict, forbidden, jsonResponse, notFound, unauthorized } from './docs';
+import { createCompany } from './companies';
+import { answerBodySchema, companyBodySchema, companySchema, onboardingSchema, stepSchema } from './contracts';
+import { badRequest, bodyOf, jsonResponse, unauthorized } from './docs';
 import { problem } from './problem';
-import { enqueue } from './queue';
 
 export const onboarding = new Hono();
 
@@ -124,37 +116,6 @@ onboarding.post(
     if (!created.ok) return problem(c, 503, 'unavailable', 'компания не заведена');
     await finishOnboarding(session.user.id, created.value.id);
     return c.json({ company: created.value }, 201);
-  },
-);
-
-/** Выписка базы компании. Работу выполняет воркер: тут только постановка. */
-onboarding.post(
-  '/v1/companies/:id/database',
-  describeRoute({
-    tags: ['companies'],
-    summary: 'Выписать базу компании',
-    responses: {
-      202: jsonResponse('Задача поставлена.', jobSchema),
-      401: unauthorized,
-      403: forbidden,
-      404: notFound,
-      409: conflict,
-    },
-  }),
-  async (c) => {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
-
-    const companyId = c.req.param('id');
-    // База выписывается только своей компании: чужой номер сюда не проходит.
-    if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
-    // Компания есть — иначе это чужой номер. База уже выписана — повтор не нужен:
-    // сама запись о базе появляется только после работы воркера.
-    if ((await findCompany(companyId)) === undefined) return problem(c, 404, 'not_found', 'компании нет');
-    if ((await databaseOf(companyId)) !== undefined) return problem(c, 409, 'conflict', 'база уже выписана');
-
-    const jobId = await enqueue('db:provision', { companyId }, `db:provision:${companyId}`);
-    return c.json({ jobId }, 202);
   },
 );
 

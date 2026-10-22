@@ -22,7 +22,6 @@
 |---|---|
 | Беседы — один экран, разный источник | отдельного «чатов телеграма» и «табов агента» нет: одна модель беседы, два источника |
 | Чтение базы — через Mirage | свой инструмент чтения не пишем: сессия поднимается с рабочей областью Mirage, база смонтирована на чтение |
-| Очередь обязательна | bunqueue и процесс-брокер стоят в E0, до всякой логики |
 | Миниаппы — спрайты сразу | публикация сразу в спрайт, не в каталог |
 | Поток — вебсокеты | комната на беседу; SSE нет нигде |
 | Модель | `deepseek-4.1-flash` через `xsai` |
@@ -54,7 +53,6 @@ ctx.messages(id, conversation_id, role, author_name, text, sent_at, raw jsonb)
 
 | Вопрос | Решение |
 |---|---|
-| Очередь | bunqueue: брокер отдельным процессом, задача `db:provision` |
 | Вебхук | снято 2026-10-05: телеграм-приём из ядра вырезан, ботов заводят кланкеры |
 | Поток | вебсокет-комната на беседу: браузер ↔ наш API, наш API ↔ gentic |
 | Чтение базы | не сделано: Mirage не подключён, доступ агента к базе — отдельная работа (§9) |
@@ -75,16 +73,15 @@ ctx.messages(id, conversation_id, role, author_name, text, sent_at, raw jsonb)
 ### E0. Каркас
 
 - Монорепо из шаблона shadcn (`--preset beqC8T2G --template react-router --monorepo --pointer`).
-- Области: `apps/api` (Hono + `Bun.serve` + вебсокеты), `apps/worker` (bunqueue), `packages/db` (drizzle + postgres-js), `packages/companies` (xsai + SGR, шаги онбординга), `packages/types` (типы и чистые функции). Сверено 2026-10-13: план называл их `packages/llm` и `packages/core` — таких пакетов нет.
-- Брокер bunqueue отдельным процессом; две задачи.
+- Области: `apps/api` (Hono + `Bun.serve` + вебсокеты), `packages/db` (drizzle + postgres-js), `packages/companies` (xsai + SGR, шаги онбординга), `packages/types` (типы и чистые функции). Сверено 2026-10-13: план называл их `packages/llm` и `packages/core` — таких пакетов нет.
 - `.env` вне репозитория: ключ модели, строка подключения, пароли служб.
-- Проверка: `bun run dev` поднимает api, web и воркер (брокер — `bun run broker`); `curl localhost:8787/health` отвечает.
+- Проверка: `bun run dev` поднимает api и web; `curl localhost:8787/health` отвечает.
 
 ### E1. Онбординг и выписка базы
 
 - `/onboarding` — чистая функция шагов в `packages/companies`.
 - Три вопроса: название, чем занимается, кому инвайты.
-- `POST /v1/companies`, `POST /v1/companies/:id/database` → задача `db:provision`: `CREATE DATABASE`, три роли, схемы `app` и `ctx`, журнал миграций.
+- `POST /v1/companies`: компания, владелец и приглашения. Своей базы у компании нет.
 - Проверка: под ролью арендатора вижу таблицы; агентская роль читает `ctx` и не пишет.
 
 ### E2. Беседы (телеграм + агент — один экран)

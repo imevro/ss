@@ -1,20 +1,19 @@
 /**
- * Чаты и лента. Читаем из базы компании нашей ролью: панель показывает то же,
- * что читает агент, — одного источника правды достаточно.
+ * Чаты и лента. Лежат в общей базе рядом с компаниями: своей базы у компании нет.
  *
  * Один вид на весь API: чат — это `conversations`, не `chats`. Описание
  * каждого маршрута стоит рядом с ним.
  */
-import { apps, db, newId, platformSql } from '@workspace/db';
+import { apps, conversations as chatTable, db, messages, newId } from '@workspace/db';
 import { createLogger } from '@workspace/log';
-import { eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { describeRoute, resolver } from 'hono-openapi';
 import { z } from 'zod';
 
 import { runTurn, stopTurn } from './agent';
 import { auth } from './auth';
-import { companiesOf, databasesOf, findCompany, isMemberOf } from './companies';
+import { companiesOf, findCompany, isMemberOf } from './companies';
 import {
   companySchema,
   conversationSchema,
@@ -53,17 +52,20 @@ conversations.get(
     const companyId = c.req.param('id');
     if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
 
-    const sql = await platformSql(companyId);
-    if (sql === undefined) return problem(c, 409, 'conflict', 'у компании нет базы');
-
-    const rows = await sql<{ id: string; source: string; title: string; last_message_at: string; messages: number }[]>`
-      SELECT c.id, c.source, c.title, c.last_message_at::text,
-             (SELECT count(*) FROM ctx.messages m WHERE m.conversation_id = c.id)::int AS messages
-      FROM ctx.conversations c
-      ORDER BY c.last_message_at DESC
-      LIMIT 100
-    `;
-    return c.json({ conversations: rows.map((row) => ({ ...row, last_message_at: isoOf(row.last_message_at) })) });
+    const rows = await db
+      .select({
+        id: chatTable.id,
+        source: chatTable.source,
+        title: chatTable.title,
+        lastMessageAt: chatTable.lastMessageAt,
+        messages: sql<number>`(SELECT count(*) FROM ${messages} m WHERE m.conversation_id = ${chatTable.id})::int`,
+      })
+      .from(chatTable)
+      .where(eq(chatTable.companyId, companyId))
+      .orderBy(desc(chatTable.lastMessageAt))
+      .limit(100);
+    const listed = rows.map((row) => ({ ...row, last_message_at: isoOf(String(row.lastMessageAt)) }));
+    return c.json({ conversations: listed.map(({ lastMessageAt: _at, ...rest }) => rest) });
   },
 );
 
@@ -88,24 +90,30 @@ conversations.get(
     const companyId = c.req.param('id');
     if (!(await isMemberOf(session.user.id, companyId))) return problem(c, 403, 'forbidden', 'чужая компания');
 
-    const sql = await platformSql(companyId);
-    if (sql === undefined) return problem(c, 409, 'conflict', 'у компании нет базы');
-
     const conversationId = c.req.param('conversationId');
-    const found = await sql<{ id: string }[]>`SELECT id FROM ctx.conversations WHERE id = ${conversationId}`;
+    const found = await db
+      .select({ id: chatTable.id })
+      .from(chatTable)
+      .where(and(eq(chatTable.id, conversationId), eq(chatTable.companyId, companyId)))
+      .limit(1);
     if (found.length === 0) return problem(c, 404, 'not_found', 'чата нет');
 
     // Сырое поле отдаём разбору на странице: там из него берётся ход работы.
-    const rows = await sql<
-      { id: string; role: string; author_name: string | null; text: string; sent_at: string; raw: unknown }[]
-    >`
-      SELECT id, role, author_name, text, sent_at::text, raw
-      FROM ctx.messages
-      WHERE conversation_id = ${conversationId}
-      ORDER BY sent_at ASC
-      LIMIT 500
-    `;
-    return c.json({ messages: rows.map((row) => ({ ...row, sent_at: isoOf(row.sent_at) })) });
+    const rows = await db
+      .select({
+        id: messages.id,
+        role: messages.role,
+        author_name: messages.authorName,
+        text: messages.text,
+        sentAt: messages.sentAt,
+        raw: messages.raw,
+      })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(asc(messages.sentAt))
+      .limit(500);
+    const listed = rows.map((row) => ({ ...row, sent_at: isoOf(String(row.sentAt)) }));
+    return c.json({ messages: listed.map(({ sentAt: _at, ...rest }) => rest) });
   },
 );
 
@@ -144,23 +152,23 @@ conversations.post(
     const text = textOf(body);
     if (text === undefined) return problem(c, 400, 'bad_request', 'пустое сообщение');
 
-    const sql = await platformSql(companyId);
-    if (sql === undefined) return problem(c, 409, 'conflict', 'у компании нет базы');
-
     const conversationId = c.req.param('conversationId');
-    const found = await sql<{ id: string }[]>`
-      SELECT id FROM ctx.conversations WHERE id = ${conversationId}
-    `;
+    const found = await db
+      .select({ id: chatTable.id })
+      .from(chatTable)
+      .where(and(eq(chatTable.id, conversationId), eq(chatTable.companyId, companyId)))
+      .limit(1);
     if (found.length === 0) return problem(c, 404, 'not_found', 'чата нет');
 
     const messageId = newId('message');
-    await sql`
-      INSERT INTO ctx.messages (id, conversation_id, role, author_name, text)
-      VALUES (${messageId}, ${conversationId}, ${'user'}, ${session.user.name}, ${text})
-    `;
-    await sql`
-      UPDATE ctx.conversations SET last_message_at = now() WHERE id = ${conversationId}
-    `;
+    await db.insert(messages).values({
+      id: messageId,
+      conversationId,
+      role: 'user',
+      authorName: session.user.name,
+      text,
+    });
+    await db.update(chatTable).set({ lastMessageAt: new Date() }).where(eq(chatTable.id, conversationId));
 
     // Человек не ждёт агента в ответе на запись: вопрос уходит в мост, ответ придёт
     // в комнату чата кусками, а готовый ляжет в ленту.
@@ -190,13 +198,7 @@ conversations.get(
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     if (session === null) return problem(c, 401, 'unauthorized', 'нужен вход');
     const list = await companiesOf(session.user.id);
-    const databases = await databasesOf(list.map((company) => company.id));
-    const withDatabase = list.map((company) => {
-      const database = databases.get(company.id);
-      if (database === undefined) return { ...company, database: 'нет' };
-      return { ...company, database: database.status };
-    });
-    return c.json({ companies: withDatabase });
+    return c.json({ companies: list });
   },
 );
 
@@ -231,24 +233,21 @@ conversations.post(
     const text = textOf(body);
     if (text === undefined) return problem(c, 400, 'bad_request', 'пустое сообщение');
 
-    const sql = await platformSql(companyId);
-    if (sql === undefined) return problem(c, 409, 'conflict', 'у компании нет базы');
-
     // Номер чата делаем сами: он уходит в адрес панели и в подписку на поток.
     const conversationId = newId('conversation');
     // Заголовок — имя компании: список чатов читается по делу, а не по первой фразе.
     const company = await findCompany(companyId);
     if (company === undefined) return problem(c, 404, 'not_found', 'компании нет');
 
-    await sql`
-      INSERT INTO ctx.conversations (id, source, title)
-      VALUES (${conversationId}, ${'agent'}, ${company.name})
-    `;
+    await db.insert(chatTable).values({ id: conversationId, companyId, source: 'agent', title: company.name });
     const messageId = newId('message');
-    await sql`
-      INSERT INTO ctx.messages (id, conversation_id, role, author_name, text)
-      VALUES (${messageId}, ${conversationId}, ${'user'}, ${session.user.name}, ${text})
-    `;
+    await db.insert(messages).values({
+      id: messageId,
+      conversationId,
+      role: 'user',
+      authorName: session.user.name,
+      text,
+    });
     log.info('чат заведена', { companyId, conversationId });
     // Первое сообщение — такое же начало хода, как и любое следующее: без этого
     // новый чат оставался без ответа.

@@ -32,6 +32,9 @@ type Answers = {
 
 type Saved = { readonly answers: Answers };
 
+/** Пустые ответы: новая компания заводится с чистого листа. */
+const EMPTY_SAVED: Saved = { answers: { company: '', business: '', invites: [] } };
+
 type Company = { readonly id: string; readonly name: string; readonly slug: string };
 
 /** Разделители адресов: те же, что понимает сервер. */
@@ -48,14 +51,21 @@ export async function loader({ request }: Route.LoaderArgs) {
   const me = await fetch(`${origin}/v1/me`, { headers });
   if (me.status === 401) throw redirect('/login');
 
-  // Компания уже есть — онбординг этому человеку не нужен и не должен
-  // открываться даже по прямой ссылке.
+  // Компаний может быть несколько: онбординг — это завод новой, а не
+  // однократный вход. Поэтому страница открывается всегда, а прежние ответы
+  // показываются только тому, у кого компаний ещё нет.
   const list = await api<{ companies: readonly Company[] }>(`${origin}/v1/companies`, { headers });
-  if (list.companies.length > 0) throw redirect('/companies');
 
   const data = await api<{ steps: readonly Step[] }>(`${origin}/v1/onboarding/steps`, { headers });
+  const previous = await previousAnswers(origin, headers, list.companies.length > 0);
+  return { steps: data.steps, saved: previous, hasCompanies: list.companies.length > 0 };
+}
+
+/** Прежние ответы: они нужны только при первой компании, иначе форма начинается пустой. */
+async function previousAnswers(origin: string, headers: Headers, hasCompanies: boolean): Promise<Saved> {
+  if (hasCompanies) return EMPTY_SAVED;
   const saved = await api<{ onboarding: Saved }>(`${origin}/v1/onboarding`, { headers });
-  return { steps: data.steps, saved: saved.onboarding };
+  return saved.onboarding;
 }
 
 /** Поле шага: длинный ответ — многострочный, остальные — одна строка. */
@@ -79,7 +89,7 @@ function Field({
 }
 
 export default function Onboarding({ loaderData }: Route.ComponentProps) {
-  const { steps, saved } = loaderData;
+  const { steps, saved, hasCompanies } = loaderData;
   const [answers, setAnswers] = useState<Readonly<Record<StepId, string>>>({
     company: saved.answers.company,
     business: saved.answers.business,
@@ -109,7 +119,6 @@ export default function Onboarding({ loaderData }: Route.ComponentProps) {
           invites: answers.invites.split(ADDRESS_SPLIT).filter((part) => part !== ''),
         }),
       });
-      await api(`/v1/companies/${created.company.id}/database`, { method: 'POST' });
       globalThis.location.assign(companyAddress(created.company.slug));
     } catch (error) {
       setProblem(reasonOf(error));
@@ -136,6 +145,12 @@ export default function Onboarding({ loaderData }: Route.ComponentProps) {
         <Button disabled={busy || !ready} onClick={() => void create()}>
           {busy ? 'Завожу…' : 'Завести компанию'}
         </Button>
+        {/* Второй заход сюда приходит из списка компаний: уйти обратно должно быть можно всегда. */}
+        {hasCompanies && (
+          <a className="text-center underline" href="/companies">
+            Назад к компаниям
+          </a>
+        )}
       </div>
     </main>
   );

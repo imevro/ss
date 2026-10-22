@@ -7,18 +7,17 @@
  */
 
 import { toSlug } from '@workspace/companies';
-import { companyDatabases, db, member, organization } from '@workspace/db';
+import { db, member, organization } from '@workspace/db';
 import { createLogger, messageOf } from '@workspace/log';
 import type { Result } from '@workspace/types';
 import { err, ok } from '@workspace/types';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { auth } from './auth';
 
 const log = createLogger('companies');
 
 export type Company = typeof organization.$inferSelect;
-export type CompanyDatabase = typeof companyDatabases.$inferSelect;
 
 export type NewCompany = {
   readonly name: string;
@@ -40,7 +39,7 @@ export type CompanyError = { readonly kind: 'not_created' };
 export const createCompany = async (input: NewCompany): Promise<Result<Company, CompanyError>> => {
   const made = await auth.api
     .createOrganization({
-      body: { name: input.name, slug: toSlug(input.name), metadata: { business: input.business } },
+      body: { name: input.name, slug: await freeSlug(input.name), metadata: { business: input.business } },
       headers: input.headers,
     })
     .catch((error: unknown): undefined => {
@@ -71,6 +70,34 @@ export const findCompany = async (id: string): Promise<Company | undefined> => {
   return rows[0];
 };
 
+/**
+ * Свободное имя для SQL. Адрес компании в адресе страницы уникален, а имя
+ * компании — нет: вторая «Своя» упёрлась бы в занятый адрес. Поэтому к занятому
+ * имени добавляется номер, и первое имя остаётся нетронутым.
+ */
+const candidateFor = (base: string, number: number): string => {
+  if (number === 1) return base;
+  return `${base}_${number}`;
+};
+
+const slugTaken = async (candidate: string): Promise<boolean> => {
+  const rows = await db
+    .select({ id: organization.id })
+    .from(organization)
+    .where(eq(organization.slug, candidate))
+    .limit(1);
+  return rows.length > 0;
+};
+
+const freeFrom = async (base: string, number: number): Promise<string> => {
+  if (number > 99) throw new Error(`не нашлось свободного адреса для «${base}»`);
+  const candidate = candidateFor(base, number);
+  if (!(await slugTaken(candidate))) return candidate;
+  return freeFrom(base, number + 1);
+};
+
+export const freeSlug = (name: string): Promise<string> => freeFrom(toSlug(name), 1);
+
 /** Компании человека: по ним строится вход. Членство читаем из таблицы плагина. */
 export const companiesOf = async (userId: string): Promise<readonly Company[]> =>
   db
@@ -91,15 +118,3 @@ export const isMemberOf = async (userId: string, companyId: string): Promise<boo
     .where(and(eq(member.userId, userId), eq(member.organizationId, companyId), eq(member.status, 'active')))
     .limit(1)
     .then((rows) => rows.length > 0);
-
-export const databaseOf = async (companyId: string): Promise<CompanyDatabase | undefined> => {
-  const rows = await db.select().from(companyDatabases).where(eq(companyDatabases.companyId, companyId)).limit(1);
-  return rows[0];
-};
-
-/** Базы перечисленных компаний одним запросом: список компаний не должен ждать по запросу на каждую. */
-export const databasesOf = async (companyIds: readonly string[]): Promise<ReadonlyMap<string, CompanyDatabase>> => {
-  if (companyIds.length === 0) return new Map();
-  const rows = await db.select().from(companyDatabases).where(inArray(companyDatabases.companyId, companyIds));
-  return new Map(rows.map((row) => [row.companyId, row]));
-};

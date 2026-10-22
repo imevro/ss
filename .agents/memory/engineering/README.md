@@ -12,3 +12,4 @@
 - [`do-onboarding-three-questions`](do-onboarding-three-questions.md) — онбординг: три вопроса без модели, база без таблиц.
 - [`do-obyazatelnyi-shag-proveryaetsya-v-api`](do-obyazatelnyi-shag-proveryaetsya-v-api.md) — обязательный вопрос шага обязателен и на входе API, иначе компания заводится без ответа.
 - [`do-stroka-agenta-ne-lomaet-otvet`](do-stroka-agenta-ne-lomaet-otvet.md) — строка агента из потока ошибок идёт кадром `log`; `failed` закрывает ход и не годится для замечания.
+- [`do-kompaniya-bez-bazy`](do-kompaniya-bez-bazy.md) — компания это название, люди и сессии джентиков; своей базы и выписки у неё нет.
