@@ -116,10 +116,10 @@ not trivial. The links below point to subjects, not topics.
 Subjects:
 
 - [agents](.agents/memory/agents/README.md) — how our API talks to the agent service.
-- [chat](.agents/memory/chat/README.md) — how the panel builds the thread and the work line.
+- [chat](.agents/memory/chat/README.md) — how the panel builds the feed and the work circles.
 - [deploy](.agents/memory/deploy/README.md) — how we build, release and run our boxes.
 - [cloudflare](.agents/memory/cloudflare/README.md) — how a clanker reaches the Cloudflare platform.
-- [engineering](.agents/memory/engineering/README.md) — как мы пишем и что решаем заново.
+- [engineering](.agents/memory/engineering/README.md) — how we write and what we decide again.
 
 ## Adding a topic
 

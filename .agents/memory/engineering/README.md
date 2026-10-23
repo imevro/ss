@@ -1,15 +1,15 @@
-# Инженерные правила
+# Engineering rules
 
-Как мы пишем и что решаем заново.
+How we write and what we decide again.
 
-- [`do-maksimum-steka-ne-svoyo`](do-maksimum-steka-ne-svoyo.md) — берём максимум выбранного стека; своё пишем только там, где готового нет.
-- [`how-kompanii-na-plaginy-organizacij`](how-kompanii-na-plaginy-organizacij.md) — компании, членства и приглашения ведёт плагин организаций better-auth.
-- [`gotcha-priglashenie-trebuet-podtverzhdeniya-pochty`](gotcha-priglashenie-trebuet-podtverzhdeniya-pochty.md) — приглашение принимается только с подтверждённой почтой; у нас настройка выключена.
-- [`gotcha-polya-organizacij-sveryayutsya-po-imenam`](gotcha-polya-organizacij-sveryayutsya-po-imenam.md) — таблицы и поля организаций обязаны носить имена плагина.
-- [`do-storozh-vhoda-do-zaprosov`](do-storozh-vhoda-do-zaprosov.md) — загрузчик спрашивает «кто вошёл» до запроса данных, иначе увод на вход не срабатывает.
-- [`do-vremya-naruzhu-v-iso`](do-vremya-naruzhu-v-iso.md) — время наружу приводится к ISO один раз, на выходе из API.
-- [`do-otrezok-sessions-odin-na-chaty-i-miniappy`](do-otrezok-sessions-odin-na-chaty-i-miniappy.md) — чаты и миниаппы открываются одним отрезком адреса `sessions`.
-- [`do-onboarding-three-questions`](do-onboarding-three-questions.md) — онбординг: три вопроса без модели, база без таблиц.
-- [`do-obyazatelnyi-shag-proveryaetsya-v-api`](do-obyazatelnyi-shag-proveryaetsya-v-api.md) — обязательный вопрос шага обязателен и на входе API, иначе компания заводится без ответа.
-- [`do-stroka-agenta-ne-lomaet-otvet`](do-stroka-agenta-ne-lomaet-otvet.md) — строка агента из потока ошибок идёт кадром `log`; `failed` закрывает ход и не годится для замечания.
-- [`do-kompaniya-bez-bazy`](do-kompaniya-bez-bazy.md) — компания это название, люди и сессии джентиков; своей базы и выписки у неё нет.
+- [`do-take-the-most-of-the-stack`](do-take-the-most-of-the-stack.md) — take the most of the chosen stack; write our own only where nothing exists.
+- [`how-companies-live-on-organization-plugin`](how-companies-live-on-organization-plugin.md) — companies, members and invitations are run by the better-auth organization plugin.
+- [`gotcha-invitation-requires-verified-email`](gotcha-invitation-requires-verified-email.md) — an invitation is accepted only with a verified email; our setting is off.
+- [`gotcha-organization-fields-match-by-name`](gotcha-organization-fields-match-by-name.md) — organization tables and fields must carry the plugin's names.
+- [`do-sign-in-guard-before-data`](do-sign-in-guard-before-data.md) — the loader asks "who signed in" before any data request, or the redirect to sign-in never fires.
+- [`do-time-to-iso-at-the-boundary`](do-time-to-iso-at-the-boundary.md) — time is converted to ISO once, at the API exit.
+- [`do-one-sessions-segment-for-chats-and-miniapps`](do-one-sessions-segment-for-chats-and-miniapps.md) — chats and miniapps open under one address segment, `sessions`.
+- [`do-onboarding-three-questions`](do-onboarding-three-questions.md) — onboarding: three questions, no model, no database.
+- [`do-required-step-question-checked-in-api`](do-required-step-question-checked-in-api.md) — a required step question is required at the API entry too, or a company is created without an answer.
+- [`do-agent-line-does-not-break-the-answer`](do-agent-line-does-not-break-the-answer.md) — the agent line from the error stream goes as a `log` frame; `failed` closes the turn and is wrong for a remark.
+- [`do-company-without-a-database`](do-company-without-a-database.md) — a company is a name, people and gentic sessions; it has no database of its own.

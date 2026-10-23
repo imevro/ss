@@ -1,18 +1,20 @@
-# Ключ комнаты уходит в путь как есть
+# The room key goes into the path as is
 
-Ключ агента — `-<число>:<поток>`. Двоеточие в адресе кодируется как `%3A`, и
-агент, читая путь, видит `-1%3A0` — вид не тот, ответ 400.
+The agent key is `-<number>:<stream>`. A colon in the address is encoded as `%3A`,
+and the agent, reading the path, sees `-1%3A0` — the wrong shape, answer 400.
 
-**Не кодируй ключ.** Знаки ключа (минус, цифры, двоеточие) в пути безопасны.
+**Do not encode the key.** The characters of the key (minus, digits, colon) are safe
+in a path.
 
 ```ts
-// правильно
+// right
 const url = `${config.agentUrl}/room/${key}?token=${encodeURIComponent(secret)}`;
 
-// неправильно: агент получает -1%3A0 и отвечает 400
+// wrong: the agent gets -1%3A0 and answers 400
 const url = `${config.agentUrl}/room/${encodeURIComponent(key)}?token=…`;
 ```
 
-Как это выглядело: наш мост слал `encodeURIComponent(conversationId)`, агент
-отвечал 400, кадр `error` шёл в комнату, а человек видел «агент недоступен» —
-хотя агент был жив. Первый ход через заместителя агента показал причину сразу.
+How it looked: our bridge sent `encodeURIComponent(conversationId)`, the agent
+answered 400, an `error` frame went into the room, and the person saw "agent
+unavailable" — although the agent was alive. The first turn through a stand-in agent
+showed the cause at once.

@@ -66,7 +66,7 @@ export const messageSchema = z.object({
   author_name: z.string().nullable(),
   text: z.string(),
   sent_at: z.string(),
-  /** Сырая запись сообщения: в ней лежит ход работы. Приходит с записью, поэтому лента не мигает. */
+  /** Сырая запись сообщения: в ней лежит журнал хода. Приходит с записью, поэтому лента не мигает. */
   raw: z.unknown().optional(),
 });
 

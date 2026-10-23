@@ -1,8 +1,8 @@
 # cloudflare
 
-Как кланкер получает доступ к платформе Cloudflare и что там ловит.
+How a clanker gets access to the Cloudflare platform, and what it hits there.
 
-- [`gotcha-imena-resursov-tolko-strochnye`](gotcha-imena-resursov-tolko-strochnye.md) — имена воркеров и баз у Cloudflare только строчные.
-- [`how-dostup-klankera-k-platforme`](how-dostup-klankera-k-platforme.md) — ключ компании на нашем прокси, четыре проверки и запуск wrangler.
-- [`gotcha-vhod-wrangler-zhivyot-dva-chasa`](gotcha-vhod-wrangler-zhivyot-dva-chasa.md) — вход в Cloudflare годен два часа и продлевается без браузера.
-- [`gotcha-port-tunnelya-zakryt`](gotcha-port-tunnelya-zakryt.md) — порт Cloudflare-туннеля в нашей сети закрыт; пилот идёт через Tailscale.
+- [`gotcha-resource-names-are-lowercase-only`](gotcha-resource-names-are-lowercase-only.md) — worker and database names at Cloudflare are lowercase only.
+- [`how-clanker-reaches-the-platform`](how-clanker-reaches-the-platform.md) — the company key on our proxy, four checks and running wrangler.
+- [`gotcha-wrangler-login-lives-two-hours`](gotcha-wrangler-login-lives-two-hours.md) — the Cloudflare login lasts two hours and is renewed without a browser.
+- [`gotcha-tunnel-port-is-closed`](gotcha-tunnel-port-is-closed.md) — the Cloudflare tunnel port is closed in our network; the pilot goes over Tailscale.

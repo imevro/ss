@@ -1,12 +1,12 @@
 # Onboarding is three questions and no model
 
-Онбординг спрашивает название компании, чем она занимается и кого пригласить.
-Ответы сохраняются на каждом шаге, компания заводится сразу после последнего.
-Модель в онбординге не участвует.
+Onboarding asks the company name, what it does and whom to invite. Answers are saved at
+every step, and the company is created right after the last one. The model takes no part in
+onboarding.
 
-Подбор таблиц по описанию (предложение от модели, его очередь, схема и показ)
-удалён целиком. Своей базы у компании нет вовсе (см. `do-kompaniya-bez-bazy`).
+Matching tables by description (a model proposal, its queue, schema and display) is removed
+whole. A company has no database of its own at all (see `do-company-without-a-database`).
 
-Список компаний живёт по своему адресу `/companies`; корень ведёт туда.
-Онбординг открывается всем и заводит новую компанию; прежние ответы он
-показывает только тому, у кого компаний ещё нет.
+The company list lives at its own address `/companies`; the root leads there. Onboarding is
+open to everyone and creates a new company; it shows previous answers only to someone who has
+no companies yet.

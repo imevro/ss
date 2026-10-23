@@ -1,7 +1,7 @@
 import { LayoutGridIcon, Message01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { ClientEvent } from '@workspace/types';
-import { conversationRoom, workOfRaw } from '@workspace/types';
+import { conversationRoom, runningOfRaw } from '@workspace/types';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@workspace/ui/components/empty';
 import {
   Sidebar,
@@ -26,8 +26,7 @@ import { ChatComposer, ChatThread } from '@/components/chat';
 import { sessionAddress, shortId } from '@/lib/address';
 import { api, apiOrigin, reasonOf, serverHeaders } from '@/lib/api';
 import { useChatLog } from '@/lib/chat-log';
-import type { ChatEvent, ChatMessage, StoredRow, Work } from '@/lib/chat-state';
-import { workOfStored } from '@/lib/chat-state';
+import type { ChatEvent, ChatMessage, StoredRow } from '@/lib/chat-state';
 import { useLiveRoom } from '@/lib/live';
 import { noindexMeta } from '@/lib/page-title';
 
@@ -200,8 +199,8 @@ export default function Company({ loaderData }: Route.ComponentProps) {
    * Идёт ход агента: у идущего хода конца нет. Свою страницу ведёт журнал, а зашедшую
    * посреди хода — лента сервера: там у идущего ответа та же отметка, что и в записи.
    */
-  const live = log.state.work !== null && log.state.work.endedAt === null;
-  const recorded = workOfRaw(messages.at(-1)?.raw)?.endedAt === null;
+  const live = log.state.running;
+  const recorded = runningOfRaw(messages.at(-1)?.raw);
   const working = live || recorded;
   /** Агент занят: очередь ждёт, пока он освободится. */
   const busy = working || awaiting || starting;
@@ -344,7 +343,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
     void release(head.text, true);
   };
 
-  const turns: readonly Turn[] = turnsOf(log.state.messages, log.state.work);
+  const turns: readonly Turn[] = turnsOf(log.state.messages, { typing: live, expanded: working });
   const shownProblem = shownProblemOf(problem, log.state.problem);
 
   const title = titleOf(activeConversation, activeApp);
@@ -432,13 +431,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
           <>
             <ChatThread turns={turns} />
             <div className="mx-auto w-full max-w-3xl shrink-0">
-              <ChatComposer
-                placeholder="Написать сообщение"
-                busy={busy}
-                queued={queue.items}
-                onSend={ask}
-                onFlush={flushQueue}
-              />
+              <ChatComposer placeholder="Написать сообщение" queued={queue.items} onSend={ask} onFlush={flushQueue} />
             </div>
           </>
         )}
@@ -448,7 +441,7 @@ export default function Company({ loaderData }: Route.ComponentProps) {
             <div className="flex w-full max-w-xl flex-col gap-3">
               <h1 className="font-heading font-medium text-2xl">С чего начнём?</h1>
               <p className="text-muted-foreground">Напишите, что нужно узнать или собрать. Ответ придёт в этот чат.</p>
-              <ChatComposer placeholder="Написать сообщение" busy={busy} onSend={startChat} />
+              <ChatComposer placeholder="Написать сообщение" onSend={startChat} />
             </div>
           </div>
         )}
@@ -458,36 +451,27 @@ export default function Company({ loaderData }: Route.ComponentProps) {
 }
 
 /**
- * Лента из состояния. Строка работы у каждого ответа своя: у идущего — живой ход,
- * у готового — ход из записи. Поэтому она одна и та же до и после обновления страницы.
+ * Лента из состояния. Блоки ответа идут своим порядком, а печать и раскрытие хода —
+ * отметки страницы: печатается только идущий ответ, раскрыт круг только у идущего хода.
  */
-const turnsOf = (messages: readonly ChatMessage[], work: Work | null): readonly Turn[] => {
+const turnsOf = (
+  messages: readonly ChatMessage[],
+  marks: { readonly typing: boolean; readonly expanded: boolean },
+): readonly Turn[] => {
   const last = messages.at(-1);
-  const running = work !== null && work.endedAt === null;
   return messages.map((message) => {
-    // Печатается и несёт строку работы только ответ агента: строка — про его
-    // работу, и место ей слева. Вопрос человека ничего этого не показывает.
-    const typing = running && message === last && message.role === 'assistant';
+    // Печатается и показывает ход только ответ агента: другой роли это не про работу.
+    const answer = message === last && message.role === 'assistant';
     return {
       id: message.id,
       from: message.role,
       text: message.text,
       at: clock(message.at),
-      typing,
+      typing: answer && marks.typing,
+      expanded: answer && marks.expanded,
       blocks: message.blocks,
-      workLine: lineFor(message, typing, work),
     };
   });
-};
-
-/**
- * Строка работы реплики. Идёт ход — строка живая, она у идущего ответа. Ход кончился —
- * строка берётся из записи: та же до и после обновления страницы. Нет хода — нет строки.
- */
-const lineFor = (message: ChatMessage, typing: boolean, work: Work | null): Work | undefined => {
-  if (typing && work !== null) return work;
-  if (message.storedWork === undefined) return;
-  return workOfStored(message.storedWork, message.at);
 };
 
 /** Ошибка страницы важнее ошибки чата: свежая весть заменяет прошлую. */

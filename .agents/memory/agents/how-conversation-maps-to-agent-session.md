@@ -1,24 +1,24 @@
-# Чат наш, ключ агента его
+# The chat is ours, the agent key is his
 
-Номер чата — наш (`chat_…`). Ключ комнаты агента — его (`-<число>:0`), и он
-должен быть один и тот же весь срок жизни чата: иначе агент теряет память
-между вопросами.
+The chat number is ours (`chat_…`). The agent room key is his (`-<number>:0`), and it
+must stay the same for the whole life of the chat: otherwise the agent loses memory
+between questions.
 
-Связку держит таблица `agent_sessions` в главной базе: `company_id`,
-`conversation_id`, `gentic_key`. Номер ключа берётся так:
+The link is held by the `agent_sessions` table in the core database: `company_id`,
+`conversation_id`, `gentic_key`. The key number is taken like this:
 
 ```
-взять запись по (компания, чат) — если есть, вернуть её ключ;
-иначе: номер = очередное значение последовательности базы;
-       ключ = `-<номер>:0`; записать, повтор вставки погасить.
+take the row by (company, chat) — if it exists, return its key;
+otherwise: number = next value of the database sequence;
+           key = `-<number>:0`; write it, absorb a repeated insert.
 ```
 
-Номер даёт последовательность, а не счёт строк: считая строки, два одновременных
-запроса получают один номер. Номер растёт и не переиспользуется: исчезнувший чат
-не должен отдать свой номер новому — у агента по номеру лежит память.
+The number comes from a sequence, not from counting rows: counting rows gives two
+simultaneous requests one number. The number grows and is never reused: a vanished
+chat must not give its number to a new one — the agent keeps memory by number.
 
-**Чего не делать:** не посылать агенту наш номер чата. Агент принимает только
-`-<число>:<поток>`, а смысл номера — его собственный.
+**What not to do:** do not send the agent our chat number. The agent accepts only
+`-<number>:<stream>`, and the meaning of the number is his own.
 
-**Проверка:** спроси агента дважды в одном чате, второй раз попроси повторить
-первый ответ. Если ключ меняется, агент ответит «мы ещё не знакомы».
+**Check:** ask the agent twice in one chat, the second time ask it to repeat the first
+answer. If the key changes, the agent says "we have not met yet".

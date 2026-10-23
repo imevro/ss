@@ -1,16 +1,17 @@
 /**
- * Проверка сведения журнала: лента и ход работы выводятся из записей одним
- * проходом. Проверяем то, что нельзя увидеть глазами: повтор ответа при записи
- * в базу, счёт мыслей, порядок частей.
+ * Проверка сведения журнала: лента, порядок блоков ответа и ход работы выводятся из
+ * записей одним проходом. Проверяем то, что нельзя увидеть глазами: где кончается круг
+ * работы, как склеивается текст и как те же блоки получаются из записи в базе.
  *
- * Здесь нет разметки: строку работы, печать по буквам, подписку на комнату и строку
- * ввода эта проверка не трогает — у страницы нет ни браузерной среды, ни отрисовки.
+ * Здесь нет разметки: печать по буквам, Trace, подписку на комнату и строку ввода эта
+ * проверка не трогает — у страницы нет ни браузерной среды, ни отрисовки.
  *
  * Запуск: bun test app/lib/chat-state.test.ts
  */
 import { describe, expect, test } from 'bun:test';
 
-import type { ChatEvent, LogEntry } from '@workspace/types';
+import type { ChatBlock, ChatEvent, ChatMessage, LogEntry } from '@workspace/types';
+import { framesOfRaw, runningOfRaw } from '@workspace/types';
 
 import { fold, stateOf, workOfStored } from './chat-state';
 
@@ -20,6 +21,27 @@ const log = (events: readonly ChatEvent[]): readonly LogEntry[] =>
   events.map((event, index) => ({ at: at(index), event }));
 
 const ask = (id: string, text: string): ChatEvent => ({ kind: 'ask', id, text, at: at(0) });
+
+/** Блоки последнего ответа агента: лента читается с конца. */
+const blocksOf = (messages: readonly ChatMessage[]): readonly ChatBlock[] => {
+  const answer = messages.findLast((message) => message.role === 'assistant');
+  if (answer === undefined) throw new Error('ответа агента в ленте нет');
+  return answer.blocks;
+};
+
+/** Блоки реплики по номеру: реплики нет — пусто, это и проверяем. */
+const blocksAt = (messages: readonly ChatMessage[], index: number): readonly ChatBlock[] => {
+  const message = messages[index];
+  if (message === undefined) return [];
+  return message.blocks;
+};
+
+/** Вид блока одной строкой: `text:привет`, `work:bash,read`. */
+const shapesOf = (blocks: readonly ChatBlock[]): readonly string[] =>
+  blocks.map((block) => {
+    if (block.type === 'text') return `text:${block.text}`;
+    return `work:${block.calls.map((call) => call.name).join(',')}`;
+  });
 
 describe('сведение журнала', () => {
   test('вопрос и ответ ложатся в ленту по порядку', () => {
@@ -38,28 +60,68 @@ describe('сведение журнала', () => {
     ]);
   });
 
-  test('ход работы считает мысли и берёт список инструментов из кадра', () => {
-    // Кадр несёт весь список хода: он заменяет прошлый, а не дополняет его.
+  test('ответ идёт кругами: слова, работа, слова, работа, слова', () => {
+    // Каждый круг работы закрывается, когда начинаются следующие слова: поэтому у
+    // каждого круга свои часы, а текст не склеивается в один блок.
     const state = fold(
       log([
         { kind: 'started' },
+        { kind: 'chunk', text: 'Смотрю' },
         { kind: 'live', calls: [{ name: 'bash', intent: 'Смотрю файлы' }], thinking: false },
-        {
-          kind: 'live',
-          calls: [
-            { name: 'bash', intent: 'Смотрю файлы' },
-            { name: 'read', intent: 'Читаю схему' },
-          ],
-          thinking: true,
-        },
-        { kind: 'thought' },
-        { kind: 'thought' },
+        { kind: 'chunk', text: 'Нашёл' },
+        { kind: 'live', calls: [{ name: 'read', intent: 'Читаю схему' }], thinking: true },
+        { kind: 'chunk', text: 'Готово' },
         { kind: 'ended' },
       ]),
     );
-    expect(state.work?.thoughts).toBe(2);
-    expect(state.work?.endedAt).not.toBeNull();
-    expect(state.work?.calls.map((call) => call.name)).toEqual(['bash', 'read']);
+    expect(shapesOf(blocksOf(state.messages))).toEqual([
+      'text:Смотрю',
+      'work:bash',
+      'text:Нашёл',
+      'work:read',
+      'text:Готово',
+    ]);
+    expect(state.messages.at(-1)?.text).toBe('СмотрюНашёлГотово');
+  });
+
+  test('круг работы берёт часы от своих кадров', () => {
+    // Записи идут по секунде: круг открылся на первой, закрылся следующей записью.
+    const state = fold(
+      log([
+        { kind: 'started' },
+        { kind: 'live', calls: [{ name: 'bash', intent: 'Смотрю' }], thinking: false },
+        { kind: 'chunk', text: 'готово' },
+      ]),
+    );
+    const work = blocksOf(state.messages).find((block) => block.type === 'work');
+    if (work === undefined || work.type !== 'work') throw new Error('круга работы нет');
+    expect(work.startedAt).toBe(at(1));
+    expect(work.endedAt).toBe(at(2));
+  });
+
+  test('кадр без вызовов блока не заводит, а мысль до вызова заводит круг', () => {
+    // `live` с пустым списком — это ещё не работа, а признак мысли: своего блока нет.
+    // Мысль до первого вызова — уже круг: строка хода должна быть видна.
+    const quiet = fold(log([{ kind: 'started' }, { kind: 'live', calls: [], thinking: true }, { kind: 'ended' }]));
+    expect(blocksOf(quiet.messages)).toEqual([]);
+    expect(quiet.running).toBe(false);
+
+    const thought = fold(log([{ kind: 'started' }, { kind: 'thought' }, { kind: 'ended' }]));
+    expect(shapesOf(blocksOf(thought.messages))).toEqual(['work:']);
+    const work = blocksOf(thought.messages)[0];
+    if (work === undefined || work.type !== 'work') throw new Error('круга работы нет');
+    expect(work.thoughts).toBe(1);
+  });
+
+  test('ход идёт, пока в журнале нет конца', () => {
+    const open = fold(log([{ kind: 'started' }, { kind: 'chunk', text: 'раз' }]));
+    expect(open.running).toBe(true);
+    const closed = fold(log([{ kind: 'started' }, { kind: 'chunk', text: 'раз' }, { kind: 'ended' }]));
+    expect(closed.running).toBe(false);
+    // Сорванный ход тоже кончается: круг закрыт, хода больше нет.
+    const failed = fold(log([{ kind: 'started' }, { kind: 'failed', reason: 'нет связи' }]));
+    expect(failed.running).toBe(false);
+    expect(failed.problem).toBe('нет связи');
   });
 
   test('новый вопрос начинает ход заново: прошлые инструменты не тянутся', () => {
@@ -74,8 +136,84 @@ describe('сведение журнала', () => {
         { kind: 'live', calls: [], thinking: true },
       ]),
     );
-    expect(state.work?.calls).toEqual([]);
-    expect(state.work?.thoughts).toBe(0);
+    expect(blocksOf(state.messages)).toEqual([]);
+    expect(state.running).toBe(true);
+  });
+
+  test('запись с журналом сводится в те же блоки, что живой журнал', () => {
+    const frames: readonly LogEntry[] = [
+      { at: at(1), event: { kind: 'chunk', text: 'Смотрю' } },
+      { at: at(2), event: { kind: 'live', calls: [{ name: 'bash', intent: 'Смотрю файлы' }], thinking: false } },
+      { at: at(3), event: { kind: 'chunk', text: 'Готово' } },
+      { at: at(4), event: { kind: 'ended' } },
+    ];
+    const stored = [{ id: 'db1', role: 'assistant', text: '', sent_at: at(0), raw: { frames } }];
+    const state = stateOf(stored, []);
+    expect(shapesOf(blocksAt(state.messages, 0))).toEqual(['text:Смотрю', 'work:bash', 'text:Готово']);
+    expect(state.messages[0]?.text).toBe('СмотрюГотово');
+    expect(state.messages[0]?.id).toBe('db-db1');
+  });
+
+  test('идущая запись считается идущей, пока в журнале нет конца', () => {
+    const open: readonly LogEntry[] = [{ at: at(1), event: { kind: 'chunk', text: 'раз' } }];
+    expect(runningOfRaw({ frames: open })).toBe(true);
+    expect(runningOfRaw({ frames: [] })).toBe(true);
+    const closed: readonly LogEntry[] = [...open, { at: at(2), event: { kind: 'ended' } }];
+    expect(runningOfRaw({ frames: closed })).toBe(false);
+    const failed: readonly LogEntry[] = [...open, { at: at(2), event: { kind: 'failed', reason: 'сбой' } }];
+    expect(runningOfRaw({ frames: failed })).toBe(false);
+    // Старой записи журнала не знать: её ход идёт, пока у сводки нет конца.
+    expect(runningOfRaw({ work: { seconds: 1, thoughts: 0, endedAt: null } })).toBe(true);
+    expect(runningOfRaw({ work: { seconds: 1, thoughts: 0 } })).toBe(false);
+  });
+
+  test('старая запись даёт ход сводкой и текст после него', () => {
+    // Записи до переезда несут готовый ход: круг один, и он стоит перед текстом.
+    const state = stateOf(
+      [
+        {
+          id: 'db1',
+          role: 'assistant',
+          text: 'ответ',
+          sent_at: at(120),
+          raw: { work: { seconds: 30, names: ['bash', 'read'], thoughts: 2 } },
+        },
+      ],
+      [],
+    );
+    expect(shapesOf(blocksAt(state.messages, 0))).toEqual(['work:bash,read', 'text:ответ']);
+    const work = state.messages[0]?.blocks[0];
+    if (work === undefined || work.type !== 'work') throw new Error('круга работы нет');
+    // Часы строятся от длительности записи: конец — время ответа.
+    expect(work.endedAt).toBe(at(120));
+    expect(work.thoughts).toBe(2);
+  });
+
+  test('испорченный журнал не ломает ленту', () => {
+    // Поле не массив — считаем, что журнала нет: реплика покажется без блоков.
+    expect(framesOfRaw({ frames: 'мусор' })).toBeUndefined();
+    const broken = stateOf(
+      [{ id: 'db1', role: 'assistant', text: 'ответ', sent_at: at(0), raw: { frames: 'мусор' } }],
+      [],
+    );
+    expect(broken.messages[0]?.text).toBe('ответ');
+    // Чужие кадры пропускаются: реплика остаётся текстом, а не падением.
+    const state = stateOf(
+      [
+        {
+          id: 'db2',
+          role: 'assistant',
+          text: 'ответ',
+          sent_at: at(0),
+          raw: {
+            frames: [{ at: at(1), event: { kind: 'чушь' } }, { nope: true }, { at: at(2), event: { kind: 'ended' } }],
+          },
+        },
+      ],
+      [],
+    );
+    expect(state.messages[0]?.text).toBe('ответ');
+    expect(shapesOf(blocksAt(state.messages, 0))).toEqual(['text:ответ']);
   });
 
   test('записанный ответ и собранный из кусков не показываются дважды', () => {
@@ -175,60 +313,35 @@ describe('сведение журнала', () => {
     ]);
   });
 
-  test('ход работы записи читается из сырого поля', () => {
-    const state = stateOf(
-      [
-        {
-          id: 'db1',
-          role: 'assistant',
-          text: 'ответ',
-          sent_at: at(1),
-          raw: { work: { seconds: 7, names: ['bash', 'read'], thoughts: 2 } },
-        },
-      ],
-      [],
-    );
-    const storedWork = state.messages[0]?.storedWork;
-    if (storedWork === undefined) throw new Error('запись без хода: сырое поле не разобрано');
-    // Длительность и имена — то, чем строится строка работы после обновления страницы.
-    expect(storedWork.seconds).toBe(7);
-    expect(storedWork.names).toEqual(['bash', 'read']);
-  });
-
   test('старая запись с одними именами даёт список вызовов: имя становится замыслом', () => {
     // Запись собирает `workOfRaw`, и он всегда кладёт `calls` — пусть пустым. Значит
-    // разбор одних имён виден лишь там, где ход собран мимо разбора, рукой. Написать
-    // это через запись из хранилища нельзя: у неё `calls` уже есть, и он пуст.
+    // разбор одних имён виден лишь там, где ход собран мимо разбора, рукой.
     expect(workOfStored({ seconds: 7, names: ['bash', 'read'], thoughts: 2 }, at(7)).calls).toEqual([
       { name: 'bash', intent: 'bash' },
       { name: 'read', intent: 'read' },
     ]);
   });
 
-  test('запись без списка вызовов и без имён даёт пустой ход, а не падение', () => {
-    // Так выглядит запись, у которой нет ни нового `calls`, ни старых `names`. Ожидание —
-    // пусто: строка работы покажет ход без инструментов. Своего значения тут нет, и это
-    // и есть проверка: у записи без обоих полей вызовов не бывает.
-    const [message] = stateOf(
+  test('запись без хода и запись с чужим ходом дают реплику без круга', () => {
+    const state = stateOf(
       [{ id: 'db1', role: 'assistant', text: 'ответ', sent_at: at(1), raw: { work: { seconds: 4, thoughts: 0 } } }],
       [],
-    ).messages;
-    expect(message?.storedWork?.calls).toEqual([]);
-    expect(workOfStored({ seconds: 4, thoughts: 0 }, at(4)).calls).toEqual([]);
+    );
+    expect(shapesOf(blocksAt(state.messages, 0))).toEqual(['work:', 'text:ответ']);
   });
 
-  test('чужая форма записи не даёт строки', () => {
+  test('чужая форма записи не даёт круга', () => {
     const state = stateOf(
       [{ id: 'db1', role: 'assistant', text: 'ответ', sent_at: at(1), raw: { work: 'мусор' } }],
       [],
     );
-    expect(state.messages[0]?.storedWork).toBeUndefined();
+    expect(shapesOf(blocksAt(state.messages, 0))).toEqual(['text:ответ']);
   });
 
   test('запись идущего хода показывает ход идущим: конца у неё нет', () => {
     // Страницу обновили посреди хода: ход читается из записи и продолжает идти.
     // Длительность здесь нарочно не равна времени записи: идущий ход берёт часы
-    // от записи, а не длительность.
+    // от времени записи, а не длительность.
     const work = workOfStored(
       {
         seconds: 30,
@@ -286,7 +399,7 @@ describe('сведение журнала', () => {
         role: 'assistant',
         text: 'Привет',
         sent_at: at(1),
-        raw: { work: { seconds: 2, thoughts: 0, calls: [], thinking: false, endedAt: null } },
+        raw: { frames: [{ at: at(1), event: { kind: 'chunk', text: 'Привет' } }] },
       },
     ];
     const state = stateOf(
@@ -310,7 +423,7 @@ describe('сведение журнала', () => {
         role: 'assistant',
         text: 'ответ',
         sent_at: at(1),
-        raw: { work: { seconds: 3, thoughts: 0, calls: [], thinking: false, endedAt: null } },
+        raw: { frames: [{ at: at(1), event: { kind: 'chunk', text: 'ответ' } }] },
       },
     ];
     const entries = log([
@@ -331,7 +444,7 @@ describe('сведение журнала', () => {
         role: 'assistant',
         text: 'При',
         sent_at: at(1),
-        raw: { work: { seconds: 1, thoughts: 0, calls: [], thinking: true, endedAt: null } },
+        raw: { frames: [{ at: at(1), event: { kind: 'chunk', text: 'При' } }] },
       },
     ];
     const entries = log([

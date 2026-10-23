@@ -10,16 +10,28 @@
 /** Позванный инструмент: имя и замысел, ради которого его позвали. */
 export type ToolCall = { readonly name: string; readonly intent: string };
 
-/** Блок ответа: мысль агента или его слова. */
-export type ChatBlock = { readonly type: 'text'; readonly text: string };
+/**
+ * Блок ответа. Ответ идёт по кругам: слова, круг инструментов, снова слова. Блок —
+ * один круг в том порядке, в каком он был; поэтому текст агента не склеивается.
+ */
+export type ChatBlock =
+  | { readonly type: 'text'; readonly text: string }
+  | {
+      readonly type: 'work';
+      readonly calls: readonly ToolCall[];
+      readonly thoughts: number;
+      readonly thinking: boolean;
+      readonly startedAt: string;
+      /** Ход этого круга кончился: время конца. Идёт — конца нет. */
+      readonly endedAt: string | null;
+    };
 
 /** Кто говорит. В ленте только эти двое. */
 export type ChatRole = 'user' | 'assistant';
 
 /**
- * Готовый ход работы: сколько шёл, что позвал, сколько думал. Лежит в записи
- * ответа, поэтому приходит с сервера вместе с лентой — страница показывает его
- * с первого кадра, без пересчёта в браузере.
+ * Готовый ход работы. **Старая запись**: новые строки пишут журнал кадров, и вид
+ * этот остался только для чтения того, что записано до переезда.
  */
 export type StoredWork = {
   readonly seconds: number;
@@ -41,11 +53,10 @@ export type StoredWork = {
 export type ChatMessage = {
   readonly id: string;
   readonly role: ChatRole;
+  /** Текст реплики: склейка текстовых блоков. Целое всегда вывод из частей. */
   readonly text: string;
   readonly at: string;
   readonly blocks: readonly ChatBlock[];
-  /** Ход работы этого ответа. Есть у записанного ответа, нет у идущего. */
-  readonly storedWork?: StoredWork;
 };
 
 /** Номер реплики, которая собирается сейчас: у идущего ответа номер один и тот же. */
@@ -103,8 +114,8 @@ const endedAtOfField = (value: unknown): string | null | undefined => {
 };
 
 /**
- * Ход работы из записи. Сырое поле приходит из базы строкой с байтами JSON —
- * разбираем её; чужой вид не берём, ответ покажется без строки.
+ * Ход работы из записи (старая запись). Сырое поле приходит из базы строкой с
+ * байтами JSON — разбираем её; чужой вид не берём, ответ покажется без строки.
  */
 export const workOfRaw = (raw: unknown): StoredWork | undefined => {
   const parsed = parsedRaw(raw);
@@ -125,6 +136,74 @@ export const workOfRaw = (raw: unknown): StoredWork | undefined => {
   const endedAt = endedAtOfField(fields.endedAt);
   if (endedAt === undefined) return base;
   return { ...base, endedAt };
+};
+
+/** Событие кадра. Чужой вид кадра — не кадр: такой пропускаем. */
+const eventOfFrame = (value: unknown): ChatEvent | undefined => {
+  if (typeof value !== 'object' || value === null) return;
+  const event = value as Record<string, unknown>;
+  if (event.kind === 'thought') return { kind: 'thought' };
+  if (event.kind === 'ended') return endedOfField(event.messageId);
+  if (event.kind === 'failed') {
+    if (typeof event.reason !== 'string') return;
+    return { kind: 'failed', reason: event.reason };
+  }
+  if (event.kind === 'chunk') {
+    if (typeof event.text !== 'string') return;
+    return { kind: 'chunk', text: event.text };
+  }
+  if (event.kind === 'live') {
+    const calls = liveCallsOf(event.calls);
+    if (calls === undefined) return;
+    return { kind: 'live', calls, thinking: event.thinking === true };
+  }
+};
+
+/** Конец хода из кадра: номер записи есть — берём его; чужая подстановка не нужна. */
+const endedOfField = (value: unknown): ChatEvent => {
+  if (typeof value !== 'string') return { kind: 'ended' };
+  return { kind: 'ended', messageId: value };
+};
+
+/** Список вызовов живого кадра: список не пришёл — кадр испорчен, а не пуст. */
+const liveCallsOf = (value: unknown): readonly ToolCall[] | undefined => {
+  if (!Array.isArray(value)) return;
+  return callsOf(value);
+};
+
+/** Один кадр журнала: время и событие. Испорченный кадр пропускается. */
+const frameOf = (entry: unknown): LogEntry | undefined => {
+  if (typeof entry !== 'object' || entry === null) return;
+  const fields = entry as Record<string, unknown>;
+  if (typeof fields.at !== 'string') return;
+  const event = eventOfFrame(fields.event);
+  if (event === undefined) return;
+  return { at: fields.at, event };
+};
+
+/** Журнал хода, записанный в строке ответа. Нет журнала — запись старая. */
+export const framesOfRaw = (raw: unknown): readonly LogEntry[] | undefined => {
+  const parsed = parsedRaw(raw);
+  if (typeof parsed !== 'object' || parsed === null) return;
+  const frames: unknown = (parsed as Record<string, unknown>).frames;
+  if (!Array.isArray(frames)) return;
+  return frames.flatMap((entry) => {
+    const frame = frameOf(entry);
+    if (frame === undefined) return [];
+    return [frame];
+  });
+};
+
+/** Ход ещё идёт: журнал есть, а конца в нём нет. Старая запись — по концу хода. */
+export const runningOfRaw = (raw: unknown): boolean => {
+  const frames = framesOfRaw(raw);
+  if (frames === undefined) return workOfRaw(raw)?.endedAt === null;
+  const last = frames.at(-1);
+  // Журнал заведён, кадров ещё нет: ход открыли и он идёт.
+  if (last === undefined) return true;
+  if (last.event.kind === 'ended') return false;
+  if (last.event.kind === 'failed') return false;
+  return true;
 };
 
 /** Сырое поле из базы: строка с байтами JSON разбирается, готовое значение идёт как есть. */

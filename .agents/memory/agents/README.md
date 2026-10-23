@@ -1,7 +1,7 @@
-# Предмет «наш агент»
+# Section "our agent"
 
-Как наш API говорит с отдельным сервисом агента.
+How our API talks to the separate agent service.
 
-- [`ref-gentic-room-protocol`](ref-gentic-room-protocol.md) — адрес, ключ и кадры комнаты агента.
-- [`gotcha-room-key-is-not-url-encoded`](gotcha-room-key-is-not-url-encoded.md) — ключ комнаты уходит в путь как есть.
-- [`how-conversation-maps-to-agent-session`](how-conversation-maps-to-agent-session.md) — чат наш, ключ агента его: карта в `agent_sessions`.
+- [`ref-gentic-room-protocol`](ref-gentic-room-protocol.md) — the agent room: address, key and frames.
+- [`gotcha-room-key-is-not-url-encoded`](gotcha-room-key-is-not-url-encoded.md) — the room key goes into the path as is.
+- [`how-conversation-maps-to-agent-session`](how-conversation-maps-to-agent-session.md) — the chat is ours, the agent key is his: the map lives in `agent_sessions`.

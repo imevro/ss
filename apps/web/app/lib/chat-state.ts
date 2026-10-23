@@ -2,20 +2,26 @@
  * Состояние чата из журнала событий. Лента и ход работы выводятся из журнала
  * одним проходом: `fold` получает записи и отдаёт готовое состояние.
  *
+ * Ответ идёт по кругам: слова, круг инструментов, снова слова. Поэтому у реплики
+ * блоки в настоящем порядке, а не один склеенный текст и одна сводка хода.
+ *
  * Журнал живёт в памяти страницы и нигде не хранится: правда одна, она в базе.
- * Перезагрузка журнал теряет — и это не потеря: лента приходит из базы целиком,
- * а ход, который идёт сейчас, читается оттуда же (запись хода заводится с его
- * началом). Поэтому здесь нет ни сверки по времени, ни второго счёта.
+ * Перезагрузка журнал теряет — и это не потеря: в строке ответа лежит тот же журнал
+ * кадров, и страница сводит его тем же `fold`. Поэтому здесь нет ни сверки по
+ * времени, ни второго счёта.
  */
 import type { ChatBlock, ChatEvent, ChatMessage, LogEntry, StoredWork, ToolCall } from '@workspace/types';
-import { LIVE_ID, workOfRaw } from '@workspace/types';
+import { framesOfRaw, LIVE_ID, runningOfRaw, workOfRaw } from '@workspace/types';
 
 /** Сколько записей журнала держим. Старое уходит: лента читается с конца. */
 const LOG_LIMIT = 2000;
 
+/** Ход одного круга: так блок хода выглядит в реплике. */
+type WorkBlock = Extract<ChatBlock, { readonly type: 'work' }>;
+
 /**
  * Ход работы агента. Идёт — живёт по часам страницы (`endedAt === null`); кончился —
- * берётся из записи ответа (`stored`), поэтому одинакова до и после обновления.
+ * берётся из записи ответа. Остался ради старой записи: новые пишут журнал кадров.
  */
 export type Work = {
   readonly calls: readonly ToolCall[];
@@ -28,8 +34,8 @@ export type Work = {
 
 /**
  * Ход работы из записи. Часы строим от записанной длительности: конец — время
- * ответа, начало — на столько же раньше. Тогда строка показывает то же, что видела
- * страница во время хода.
+ * ответа, начало — на столько же раньше. Так старая запись показывает то же, что
+ * видела страница во время хода.
  */
 export const workOfStored = (stored: StoredWork, at: string): Work => {
   const calls = callsOfWork(stored);
@@ -51,7 +57,8 @@ export const workOfStored = (stored: StoredWork, at: string): Work => {
 /** Состояние чата. Всё выводится из журнала, ничего не хранится отдельно. */
 export type ChatState = {
   readonly messages: readonly ChatMessage[];
-  readonly work: Work | null;
+  /** Ход идёт: журнал открыт и не закрыт. */
+  readonly running: boolean;
   /** Сколько ходов агента началось: номер реплики берётся отсюда. */
   readonly turns: number;
   readonly problem: string;
@@ -61,9 +68,16 @@ export type ChatState = {
   readonly liveId: string | null;
 };
 
-const emptyState = (): ChatState => ({ messages: [], work: null, turns: 0, problem: '', note: '', liveId: null });
+const emptyState = (): ChatState => ({
+  messages: [],
+  running: false,
+  turns: 0,
+  problem: '',
+  note: '',
+  liveId: null,
+});
 
-/** Запись ленты с сервера. Сырое поле несёт ход работы ответа. */
+/** Запись ленты с сервера. Сырое поле несёт журнал хода. */
 export type StoredRow = {
   readonly id: string;
   readonly role: string;
@@ -72,21 +86,49 @@ export type StoredRow = {
   readonly raw?: unknown;
 };
 
+/** Готовая реплика и то, идёт ли ещё её ход по записи. */
+type Settled = { readonly message: ChatMessage; readonly running: boolean };
+
 /** Готовые реплики с сервера: они уже есть, переигрывать их нечего. */
-const settledOf = (messages: readonly StoredRow[]): readonly ChatMessage[] =>
-  messages.map((message) => {
-    // Ход работы есть в записи — реплика несёт его с собой; нет — реплика без строки.
-    const work = workOfRaw(message.raw);
-    const row = {
-      id: `db-${message.id}`,
-      role: roleOf(message.role),
-      text: message.text,
-      at: message.sent_at,
-      blocks: blocksOf(message.text),
-    };
-    if (work === undefined) return row;
-    return { ...row, storedWork: work };
-  });
+const settledOf = (messages: readonly StoredRow[]): readonly Settled[] =>
+  messages.map((message) => ({ message: messageOfStored(message), running: runningOfRaw(message.raw) }));
+
+/**
+ * Реплика из записи. Журнал есть — сводим его тем же `fold`, что и живые события.
+ * Журнала нет — запись старая: ход сводкой и текст после него.
+ */
+const messageOfStored = (row: StoredRow): ChatMessage => {
+  const id = `db-${row.id}`;
+  const role = roleOf(row.role);
+  const frames = framesOfRaw(row.raw);
+  if (role === 'user') return { id, role, text: row.text, at: row.sent_at, blocks: blocksOf(row.text) };
+  if (frames === undefined) return oldMessageOf(id, row);
+  const folded = fold([{ at: row.sent_at, event: { kind: 'started', messageId: id } }, ...frames]);
+  const last = folded.messages.at(-1);
+  // Журнал испорчен целиком — реплика остаётся хотя бы текстом: пустой ленты не бывает.
+  if (last === undefined) return { id, role, text: row.text, at: row.sent_at, blocks: blocksOf(row.text) };
+  if (last.blocks.length > 0) return { ...last, id };
+  if (row.text === '') return { ...last, id };
+  return { id, role, text: row.text, at: row.sent_at, blocks: blocksOf(row.text) };
+};
+
+/** Старая запись: ход сводкой, текст после него. Новые записи так не выглядят. */
+const oldMessageOf = (id: string, row: StoredRow): ChatMessage => {
+  const base: ChatMessage = { id, role: 'assistant', text: row.text, at: row.sent_at, blocks: blocksOf(row.text) };
+  const work = workOfRaw(row.raw);
+  if (work === undefined) return base;
+  const shown = workOfStored(work, row.sent_at);
+  // Ход сводки становится блоком хода: у старой записи круг один.
+  const block: WorkBlock = {
+    type: 'work',
+    calls: shown.calls,
+    thoughts: shown.thoughts,
+    thinking: shown.thinking,
+    startedAt: shown.startedAt,
+    endedAt: shown.endedAt,
+  };
+  return { ...base, blocks: [block, ...base.blocks] };
+};
 
 const roleOf = (role: string): ChatMessage['role'] => {
   if (role === 'user') return 'user';
@@ -98,12 +140,74 @@ const blocksOf = (text: string): readonly ChatBlock[] => {
   return [{ type: 'text', text }];
 };
 
-/** Вызовы хода: полный список записи, а у старых записей — одни имена. */
+/**
+ * Вызовы хода: полный список записи, а у старых записей — одни имена. Замысла у старой
+ * записи нет, поэтому замысел — само имя инструмента.
+ */
 const callsOfWork = (stored: StoredWork): readonly ToolCall[] => {
-  if (stored.calls !== undefined) return stored.calls;
+  const calls = stored.calls;
+  if (calls !== undefined && calls.length > 0) return calls;
   const names = stored.names;
   if (names === undefined) return [];
   return names.map((name) => ({ name, intent: name }));
+};
+
+/** Текст реплики — склейка текстовых блоков: целое всегда вывод из частей. */
+const textOfBlocks = (blocks: readonly ChatBlock[]): string =>
+  blocks
+    .flatMap((block) => {
+      if (block.type !== 'text') return [];
+      return [block.text];
+    })
+    .join('');
+
+/** Последний круг закрывается: слова начали новый. Другого круга нет — закрывать нечего. */
+const closeLastWork = (blocks: readonly ChatBlock[], at: string): readonly ChatBlock[] => {
+  const last = blocks.at(-1);
+  if (last === undefined) return blocks;
+  if (last.type !== 'work') return blocks;
+  if (last.endedAt !== null) return blocks;
+  return [...blocks.slice(0, -1), { ...last, thinking: false, endedAt: at }];
+};
+
+/** Кусок текста: прошлый круг закрыт, текст дописывается в свой блок или заводит новый. */
+const withChunk = (blocks: readonly ChatBlock[], at: string, text: string): readonly ChatBlock[] => {
+  const closed = closeLastWork(blocks, at);
+  const last = closed.at(-1);
+  if (last === undefined) return [...closed, { type: 'text', text }];
+  if (last.type !== 'text') return [...closed, { type: 'text', text }];
+  return [...closed.slice(0, -1), { type: 'text', text: last.text + text }];
+};
+
+/**
+ * Кадр работы. Список приходит целиком: он заменяет вызовы своего круга. Пустой
+ * список без круга блока не заводит — это ещё не работа, а только признак мысли.
+ */
+const withLive = (
+  blocks: readonly ChatBlock[],
+  at: string,
+  calls: readonly ToolCall[],
+  thinking: boolean,
+): readonly ChatBlock[] => {
+  const last = blocks.at(-1);
+  if (calls.length === 0) {
+    if (last === undefined) return blocks;
+    if (last.type !== 'work') return blocks;
+    return [...blocks.slice(0, -1), { ...last, thinking }];
+  }
+  if (last !== undefined && last.type === 'work' && last.endedAt === null) {
+    return [...blocks.slice(0, -1), { ...last, calls, thinking }];
+  }
+  return [...blocks, { type: 'work', calls, thoughts: 0, thinking, startedAt: at, endedAt: null }];
+};
+
+/** Мысль: своя у круга, а до первого вызова — у нового круга с одними мыслями. */
+const withThought = (blocks: readonly ChatBlock[], at: string): readonly ChatBlock[] => {
+  const last = blocks.at(-1);
+  if (last === undefined || last.type !== 'work') {
+    return [...blocks, { type: 'work', calls: [], thoughts: 1, thinking: false, startedAt: at, endedAt: null }];
+  }
+  return [...blocks.slice(0, -1), { ...last, thoughts: last.thoughts + 1 }];
 };
 
 /**
@@ -127,17 +231,8 @@ const liveMessage = (turns: number, at: string, id: string | null | undefined): 
   blocks: [],
 });
 
-/** Ход работы начался: список пуст, часы пошли. */
-const startedWork = (at: string): Work => ({
-  calls: [],
-  thinking: false,
-  thoughts: 0,
-  startedAt: at,
-  endedAt: null,
-});
-
 /** Последняя реплика — та, что собирается. Её и правит событие ответа. */
-const withLive = (state: ChatState, at: string, edit: (message: ChatMessage) => ChatMessage): ChatState => {
+const editLast = (state: ChatState, at: string, edit: (message: ChatMessage) => ChatMessage): ChatState => {
   const id = liveIdOf(state.turns, state.liveId);
   const last = state.messages.at(-1);
   if (last === undefined || last.id !== id) {
@@ -148,18 +243,12 @@ const withLive = (state: ChatState, at: string, edit: (message: ChatMessage) => 
   return { ...state, messages: [...state.messages.slice(0, -1), edit(last)] };
 };
 
-/** Текст реплики собирается из кусков: целое всегда вывод из частей. */
-const withText = (message: ChatMessage, text: string): ChatMessage => {
-  const block = message.blocks.at(-1);
-  if (block === undefined || block.type !== 'text') {
-    return { ...message, text: message.text + text, blocks: [...message.blocks, { type: 'text', text }] };
-  }
-  return {
-    ...message,
-    text: message.text + text,
-    blocks: [...message.blocks.slice(0, -1), { type: 'text', text: block.text + text }],
-  };
-};
+/** Блоки реплики заменяются целиком: текст — всегда вывод из них. */
+const withBlocks = (message: ChatMessage, blocks: readonly ChatBlock[]): ChatMessage => ({
+  ...message,
+  blocks,
+  text: textOfBlocks(blocks),
+});
 
 /** Собранная реплика получает номер своей записи: так её опознаёт пришедшая лента. */
 const withStoredId = (state: ChatState, messageId: string | undefined): ChatState => {
@@ -174,11 +263,9 @@ const withStoredId = (state: ChatState, messageId: string | undefined): ChatStat
   };
 };
 
-/** Ход закончился: часы остановлены. Идущего хода нет — и останавливать нечего. */
-const endedWork = (state: ChatState, at: string): ChatState => {
-  if (state.work === null) return state;
-  return { ...state, work: { ...state.work, thinking: false, endedAt: at } };
-};
+/** Последний круг закрыт: ход кончился или сорвался. */
+const closeLastCircle = (state: ChatState, at: string): ChatState =>
+  editLast(state, at, (message) => withBlocks(message, closeLastWork(message.blocks, at)));
 
 /** Один шаг переигрывания: запись журнала превращается в состояние. */
 const step = (state: ChatState, entry: LogEntry): ChatState => {
@@ -191,7 +278,7 @@ const step = (state: ChatState, entry: LogEntry): ChatState => {
         ...state.messages,
         { id: event.id, role: 'user', text: event.text, at: event.at, blocks: blocksOf(event.text) },
       ],
-      work: null,
+      running: false,
       problem: '',
       note: '',
       liveId: null,
@@ -206,40 +293,40 @@ const step = (state: ChatState, entry: LogEntry): ChatState => {
     return { ...state, messages };
   }
   if (event.kind === 'started') {
-    // Реплика агента заводится сразу с началом хода: строка работы стоит на ней,
+    // Реплика агента заводится сразу с началом хода: блоки работы стоят на ней,
     // а не на вопросе человека. Номер записи приходит этим же кадром, поэтому
     // страница и база говорят об одном ходе с первой секунды.
     const turns = state.turns + 1;
     return {
       ...state,
       messages: [...state.messages, liveMessage(turns, entry.at, event.messageId)],
-      work: startedWork(entry.at),
+      running: true,
       problem: '',
       turns,
       liveId: liveIdOf(turns, event.messageId),
     };
   }
+  if (event.kind === 'chunk') {
+    const text = event.text;
+    return editLast(state, entry.at, (message) => withBlocks(message, withChunk(message.blocks, entry.at, text)));
+  }
   if (event.kind === 'live') {
-    if (state.work === null) return state;
-    const work = { ...state.work, calls: event.calls, thinking: event.thinking };
-    return { ...state, work };
+    return editLast(state, entry.at, (message) =>
+      withBlocks(message, withLive(message.blocks, entry.at, event.calls, event.thinking)),
+    );
   }
   if (event.kind === 'thought') {
-    if (state.work === null) return state;
-    return { ...state, work: { ...state.work, thoughts: state.work.thoughts + 1 } };
-  }
-  if (event.kind === 'chunk') {
-    return withLive(state, entry.at, (message) => withText(message, event.text));
+    return editLast(state, entry.at, (message) => withBlocks(message, withThought(message.blocks, entry.at)));
   }
   if (event.kind === 'log') {
     return { ...state, note: event.text };
   }
   if (event.kind === 'failed') {
-    return { ...endedWork(state, entry.at), problem: event.reason };
+    return { ...closeLastCircle(state, entry.at), running: false, problem: event.reason };
   }
   if (event.kind === 'ended') {
     // Реплика записана: берёт номер записи. Придёт лента — вытеснит её по номеру.
-    return endedWork(withStoredId(state, event.messageId), entry.at);
+    return { ...closeLastCircle(withStoredId(state, event.messageId), entry.at), running: false };
   }
   return state;
 };
@@ -259,16 +346,19 @@ export const fold = (entries: readonly LogEntry[]): ChatState =>
 export const stateOf = (messages: readonly StoredRow[], entries: readonly LogEntry[]): ChatState => {
   const replayed = fold(entries);
   const assembling = replayed.liveId !== null;
-  const settled = settledOf(messages).filter((message) => !hiddenWhileAssembling(message, assembling));
+  const settled = settledOf(messages).flatMap((pair) => {
+    if (hiddenWhileAssembling(pair, assembling)) return [];
+    return [pair.message];
+  });
   const storedIds = new Set(settled.map((message) => message.id.slice('db-'.length)));
   const gathered = replayed.messages.filter((message) => !storedIds.has(message.id));
   return { ...replayed, messages: [...settled, ...gathered] };
 };
 
 /** Идущая запись ленты, пока ход собирается: собираемая реплика свежее её. */
-const hiddenWhileAssembling = (message: ChatMessage, assembling: boolean): boolean => {
+const hiddenWhileAssembling = (settled: Settled, assembling: boolean): boolean => {
   if (!assembling) return false;
-  return message.storedWork?.endedAt === null;
+  return settled.running;
 };
 
 /** Запись журнала добавляется в конец. Старые записи уходят — лента читается с конца. */

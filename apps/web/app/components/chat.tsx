@@ -1,20 +1,25 @@
-import type { AgentActivityItem } from '@workspace/ui/components/agents/agent-activity';
-import { AgentActivity } from '@workspace/ui/components/agents/agent-activity';
-import { Button } from '@workspace/ui/components/button';
-import { Message, MessageContent, MessageMarkdown, MessageStack } from '@workspace/ui/components/nexus-ui/message';
+import type { ChatBlock } from '@workspace/types';
+import { Bubble, BubbleContent } from '@workspace/ui/components/bubble';
 import {
-  PromptInput,
-  PromptInputAction,
-  PromptInputActionGroup,
-  PromptInputActions,
-  PromptInputTextarea,
-} from '@workspace/ui/components/prompt-input';
-import { Thread, ThreadContent, ThreadScrollToBottom } from '@workspace/ui/components/thread';
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from '@workspace/ui/components/input-group';
+import { Markdown } from '@workspace/ui/components/markdown';
+import { Message, MessageContent, MessageFooter } from '@workspace/ui/components/message';
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@workspace/ui/components/message-scroller';
 import { useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
-import { WorkLine } from './work-line';
-import type { ChatBlock, Work } from '@/lib/chat-state';
+import { WorkTrace } from './work-trace';
 
 /**
  * Лента переписки и строка ввода. Одна форма на все места, где человек говорит
@@ -29,12 +34,10 @@ export type Turn = {
   readonly at: string | null;
   /** Ответ печатается на глазах: так отвечает ассистент. */
   readonly typing: boolean;
-  /** Части ответа по порядку. Есть — текст берётся из них, а не из целого. */
-  readonly blocks?: readonly ChatBlock[] | undefined;
-  /** Работа ассистента: шаги, которые он проходит внутри этого ответа. */
-  readonly work?: { readonly items: readonly AgentActivityItem[]; readonly working: boolean } | undefined;
-  /** Ход работы агента: одна строка с инструментами и временем. */
-  readonly workLine?: Work | undefined;
+  /** Ход идёт по любой правде: живой журнал или запись. Тогда круг раскрыт. */
+  readonly expanded: boolean;
+  /** Части ответа по порядку: слова и круги работы в том виде, как они были. */
+  readonly blocks: readonly ChatBlock[];
 };
 
 /** Скорость печати: букв в секунду. Одна на все места. */
@@ -60,6 +63,12 @@ const shownAtStart = (typing: boolean, instant: boolean, total: number): number 
 const modeOf = (printing: boolean): 'streaming' | 'static' => {
   if (printing) return 'streaming';
   return 'static';
+};
+
+/** Сколько букв видно: печатаем — до напечатанного, иначе весь текст. */
+const visibleOf = (printing: boolean, shown: number, total: number): number => {
+  if (printing) return Math.min(shown, total);
+  return total;
 };
 
 /**
@@ -105,22 +114,10 @@ const TypedMarkdown = ({ text, typing }: { readonly text: string; readonly typin
   const printing = typing && !instant && shown < total;
   const visible = visibleOf(printing, shown, total);
   return (
-    <MessageMarkdown mode={modeOf(printing)} aria-busy={printing}>
-      {text.slice(0, visible)}
-    </MessageMarkdown>
+    <div data-slot="typed-markdown" aria-busy={printing}>
+      <Markdown mode={modeOf(printing)}>{text.slice(0, visible)}</Markdown>
+    </div>
   );
-};
-
-/** Сколько букв видно: печатаем — до напечатанного, иначе весь текст. */
-const visibleOf = (printing: boolean, shown: number, total: number): number => {
-  if (printing) return Math.min(shown, total);
-  return total;
-};
-
-/** Состояние работы для показа: идёт — «working», стоит — «complete». */
-const statusOf = (working: boolean): 'working' | 'complete' => {
-  if (working) return 'working';
-  return 'complete';
 };
 
 /** Имя реплики для чтения вслух: по ролям, по-русски. */
@@ -129,67 +126,93 @@ const labelOf = (from: Turn['from']): string => {
   return 'Ответ агента';
 };
 
-/** Лента переписки. Последнее сообщение всегда видно: лента сама держится низа. */
-export const ChatThread = ({
-  turns,
-  contentClassName = 'mx-auto w-full max-w-3xl',
+/** Сторона реплики: вопрос человека справа, ответ агента слева. */
+const alignOf = (from: Turn['from']): 'start' | 'end' => {
+  if (from === 'user') return 'end';
+  return 'start';
+};
+
+/** Сторона подписи с временем: она держится своей стороны реплики. */
+const footerSideOf = (from: Turn['from']): string => {
+  if (from === 'user') return 'self-end';
+  return 'self-start';
+};
+
+/** Номер последнего текстового блока: печатается только он. */
+const lastTextIndex = (blocks: readonly ChatBlock[]): number => blocks.findLastIndex((block) => block.type === 'text');
+
+/** Одна часть ответа: слова печатаются, круг работы показывает Trace или строку. */
+const BlockView = ({
+  block,
+  index,
+  turn,
 }: {
-  readonly turns: readonly Turn[];
-  /** Ширина строки: по умолчанию лента держится колонки, а не краёв окна. */
-  readonly contentClassName?: string;
-}) => (
-  <Thread className="no-scrollbar min-h-0 flex-1">
-    <ThreadContent className={contentClassName}>
-      {turns.map((turn) => (
-        <Message key={turn.id} from={turn.from} aria-label={labelOf(turn.from)}>
-          <MessageStack>
-            <MessageContent>
-              {turn.workLine !== undefined && <WorkLine work={turn.workLine} className="mb-1" />}
-              {/* Человек пишет простым текстом: перенос строки, который он поставил,
-                  так и показывается. Разметка здесь не разбирается — её нет в вопросе. */}
-              {turn.from === 'user' && <p className="whitespace-pre-wrap break-words">{turn.text}</p>}
-              {turn.from === 'assistant' &&
-                (turn.blocks === undefined
-                  ? turn.text !== '' && <MessageMarkdown mode="static">{turn.text}</MessageMarkdown>
-                  : turn.blocks.map((block, index) => (
-                      <TypedMarkdown key={`${turn.id}-${index}`} text={block.text} typing={turn.typing} />
-                    )))}
-              {turn.work !== undefined && (
-                <AgentActivity
-                  items={[...turn.work.items]}
-                  status={statusOf(turn.work.working)}
-                  contentType="step"
-                  className="pt-1"
-                />
-              )}
-            </MessageContent>
-            {turn.at !== null && <p className="px-2 text-muted-foreground">{turn.at}</p>}
-          </MessageStack>
-        </Message>
-      ))}
-    </ThreadContent>
-    <ThreadScrollToBottom />
-  </Thread>
+  readonly block: ChatBlock;
+  readonly index: number;
+  readonly turn: Turn;
+}) => {
+  if (block.type === 'text') {
+    const printing = turn.typing && index === lastTextIndex(turn.blocks);
+    return <TypedMarkdown text={block.text} typing={printing} />;
+  }
+  return (
+    <WorkTrace block={block} expanded={turn.expanded} running={turn.expanded && index === turn.blocks.length - 1} />
+  );
+};
+
+/** Лента переписки. Последнее сообщение всегда видно: лента сама держится низа. */
+export const ChatThread = ({ turns }: { readonly turns: readonly Turn[] }) => (
+  <MessageScrollerProvider autoScroll defaultScrollPosition="last-anchor">
+    <MessageScroller className="min-h-0 flex-1">
+      <MessageScrollerViewport>
+        <MessageScrollerContent
+          aria-busy={turns.some((turn) => turn.typing)}
+          className="mx-auto w-full max-w-3xl px-6 py-6"
+        >
+          {turns.map((turn) => (
+            <MessageScrollerItem key={turn.id} messageId={turn.id} scrollAnchor={turn.from === 'user'}>
+              <Message align={alignOf(turn.from)} aria-label={labelOf(turn.from)}>
+                <MessageContent>
+                  {/* Человек пишет простым текстом: перенос строки, который он поставил,
+                      так и показывается. Разметка здесь не разбирается — её нет в вопросе. */}
+                  {turn.from === 'user' && (
+                    <Bubble align="end" variant="muted">
+                      <BubbleContent>
+                        <p className="whitespace-pre-wrap break-words">{turn.text}</p>
+                      </BubbleContent>
+                    </Bubble>
+                  )}
+                  {turn.from === 'assistant' &&
+                    turn.blocks.map((block, index) => (
+                      <BlockView key={`${turn.id}-${index}`} block={block} index={index} turn={turn} />
+                    ))}
+                  {/* Время стоит под репликой, а не сбоку: боковое место занимает
+                      лента, и подпись уезжала бы к противоположному краю. */}
+                  {turn.at !== null && <MessageFooter className={footerSideOf(turn.from)}>{turn.at}</MessageFooter>}
+                </MessageContent>
+              </Message>
+            </MessageScrollerItem>
+          ))}
+        </MessageScrollerContent>
+      </MessageScrollerViewport>
+      <MessageScrollerButton />
+    </MessageScroller>
+  </MessageScrollerProvider>
 );
 
 /** Строка ввода. Enter отправляет, Shift+Enter переносит строку. */
 export const ChatComposer = ({
   placeholder,
-  busy,
   queued = [],
   onSend,
   onFlush,
-  onSkip,
 }: {
   readonly placeholder: string;
-  readonly busy: boolean;
   /** Вопросы, ждущие хода агента. В ленте их нет: они ещё не отправлены. */
   readonly queued?: readonly Queued[];
   readonly onSend: (text: string) => Promise<void>;
   /** Пустой Enter пускает верхний вопрос очереди сейчас. */
   readonly onFlush?: (() => void) | undefined;
-  /** Пропуск шага. Шаг обязательный — пропуска нет. */
-  readonly onSkip?: (() => void) | undefined;
 }) => {
   const [draft, setDraft] = useState('');
 
@@ -207,30 +230,36 @@ export const ChatComposer = ({
     void onSend(message);
   };
 
+  const empty = draft.trim() === '' && queued.length === 0;
+
   return (
     <div className="mb-4">
       {queued.length > 0 && <QueuedQuestions items={queued} />}
-      <PromptInput onSubmit={send}>
-        <PromptInputTextarea
-          value={draft}
-          placeholder={placeholder}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <PromptInputActions>
-          <PromptInputActionGroup>
-            {onSkip !== undefined && (
-              <Button variant="ghost" disabled={busy} onClick={onSkip}>
-                Пропустить
-              </Button>
-            )}
-          </PromptInputActionGroup>
-          <PromptInputAction>
-            <Button disabled={draft.trim() === '' && queued.length === 0} onClick={() => send(draft)}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          send(draft);
+        }}
+      >
+        <InputGroup>
+          <InputGroupTextarea
+            value={draft}
+            placeholder={placeholder}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                send(draft);
+              }
+            }}
+          />
+          <InputGroupAddon align="block-end">
+            <InputGroupButton type="submit" disabled={empty} className="ml-auto">
               Отправить
-            </Button>
-          </PromptInputAction>
-        </PromptInputActions>
-      </PromptInput>
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
+      </form>
     </div>
   );
 };

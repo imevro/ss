@@ -9,7 +9,7 @@
 import { chatTitle } from '@workspace/companies';
 import { agentSessions, conversations as chatTable, db, messages, newId } from '@workspace/db';
 import { createLogger, logStep } from '@workspace/log';
-import type { StoredWork, ToolCall } from '@workspace/types';
+import type { ChatEvent, LogEntry, ToolCall } from '@workspace/types';
 import { conversationRoom } from '@workspace/types';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -125,23 +125,14 @@ const genticKeyOf = async (companyId: string, conversationId: string): Promise<s
   return settled.key;
 };
 
-/** Ход работы кладётся в запись ответа: вид у него общий с показывающим. */
-
+/** Что ход отдаёт наружу: текст, номер записи и журнал кадров. */
 type Answer = {
   readonly text: string;
   readonly messageId: string | undefined;
-  readonly startedAt: number;
-  readonly state: TurnState;
+  /** Журнал хода: то, что легло в строку ответа. Вторая правда не нужна. */
+  readonly frames: readonly LogEntry[];
   /** Легли ли шаги записи. Не легли — ход нельзя объявлять удавшимся: в ленте его нет. */
   readonly stored: boolean;
-};
-
-/** Состояние хода на сейчас: текст, позванные инструменты, мысли. */
-type TurnState = {
-  readonly text: string;
-  readonly calls: readonly ToolCall[];
-  readonly thinking: boolean;
-  readonly thoughts: number;
 };
 
 /** Сколько кусков копим между записями: чаще — лишние записи, реже — больше терять. */
@@ -151,43 +142,27 @@ const WRITE_EVERY_CHUNKS = 25;
  * Запись ответа заводится с началом хода и обновляется по ходу. Поэтому у хода есть
  * место в ленте с первой секунды, а страница, обновлённая посреди хода, читает его из
  * базы: второй правды на стороне браузера нет.
+ *
+ * Хранится журнал кадров, а не сводка: страница сводит его тем же `fold`, что и живые
+ * события, поэтому порядок кругов один и тот же до и после обновления.
  */
 const openTurn = async (conversationId: string, messageId: string): Promise<void> => {
   // Начало хода кладём сразу: даже обновление в первую секунду показывает, что ход идёт.
-  const work: StoredWork = { seconds: 0, thoughts: 0, calls: [], thinking: true, endedAt: null };
   await db.insert(messages).values({
     id: messageId,
     conversationId,
     role: 'assistant',
     text: '',
-    raw: { work },
+    raw: { frames: [] },
   });
 };
 
-/** Думает ли ход: законченный ход уже не думает. */
-const thinkingOf = (ended: boolean, thinking: boolean): boolean => {
-  if (ended) return false;
-  return thinking;
-};
-
-/** Конец хода: время, когда ход закрыли. У идущего хода конца нет. */
-const endedAtOf = (ended: boolean): string | null => {
-  if (!ended) return null;
-  return new Date().toISOString();
-};
-
-/** Шаг хода лёг в запись: текст, ход работы и признак конца. */
-const writeTurn = async (messageId: string, startedAt: number, state: TurnState, ended: boolean): Promise<void> => {
-  const work: StoredWork = {
-    // Работа была, раз ответ пришёл: показываем хотя бы секунду, а не «0s».
-    seconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
-    thoughts: state.thoughts,
-    calls: state.calls,
-    thinking: thinkingOf(ended, state.thinking),
-    // Конец хода. У идущего его нет — по нему видно, что ход ещё идёт.
-    endedAt: endedAtOf(ended),
-  };
-  await db.update(messages).set({ text: state.text, raw: { work } }).where(eq(messages.id, messageId));
+/** Журнал лёг в запись. Текст не пишем: он выводится из журнала. */
+const writeTurn = async (messageId: string, frames: readonly LogEntry[]): Promise<void> => {
+  await db
+    .update(messages)
+    .set({ raw: { frames: [...frames] } })
+    .where(eq(messages.id, messageId));
 };
 
 /** Ход без ответа: пустая запись в ленте не нужна — убираем её. */
@@ -196,11 +171,12 @@ const dropTurn = async (messageId: string): Promise<void> => {
 };
 
 /**
- * Спросить агента и провести ответ в чат. Ответ копится и в памяти, и в записи: память
- * нужна комнате, запись — ленте. Куски уходят в комнату и в запись вместе.
+ * Спросить агента и провести ответ в чат. Ответ копится в журнале кадров: память нужна
+ * комнате, журнал — записи. Кусок уходит в комнату и в журнал одним и тем же кадром,
+ * поэтому страница и база собирают ленту из одинаковых событий.
  */
 export const askAgent = async (companyId: string, conversationId: string, question: string): Promise<Answer> => {
-  const empty: Answer = { text: '', messageId: undefined, startedAt: Date.now(), state: emptyState(), stored: false };
+  const empty: Answer = { text: '', messageId: undefined, frames: [], stored: false };
   if (config.agentUrl === '') return empty;
   // Название придумывается рядом с ходом и уходит в комнату само: человек видит
   // вопрос, а список чатов тем временем получает имя. Ход названия не ждёт.
@@ -219,71 +195,78 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     socket.send(JSON.stringify({ kind: 'stop' }));
   };
   running.set(lane, stop);
-  const startedAt = Date.now();
   const messageId = newId('message');
   const waiter = Promise.withResolvers<Answer>();
 
-  // Списки хода: куски текста, кадры вызовов и мыслей (кадр заменяет прошлый)
-  // и число записей. Копилки — реестры кадров, как реестр соединений в комнатах.
+  // Журнал хода и куски текста. Журнал — единственное, что ляжет в запись: страница
+  // сведёт его тем же проходом, что и живые события.
+  const frames: LogEntry[] = [];
   const parts: string[] = [];
-  const callLists: (readonly ToolCall[])[] = [];
-  const thinkings: boolean[] = [];
-  const thoughts: number[] = [];
-  const written: number[] = [];
   const writes: Promise<void>[] = [];
   /** Отказы записи. Копится отдельно: `allSettled` исхода не различает. */
   const failed: number[] = [];
 
-  const stateOf = (): TurnState => ({
-    text: parts.join(''),
-    calls: lastOf(callLists, []),
-    thinking: lastFlag(thinkings, false),
-    thoughts: thoughts.length,
-  });
+  const push = (event: ChatEvent): void => {
+    frames.push({ at: new Date().toISOString(), event });
+  };
 
   /**
-   * Шаг записи идёт в копилку. Отказ шага не должен ронять мост: незамеченный отказ
+   * Очередь записи: шаги ложатся друг за другом. Иначе обновление обгоняет вставку
+   * записи, и обновлять ещё нечего — ход теряет весь журнал.
+   */
+  const queue: { tail: Promise<void> } = { tail: Promise.resolve() };
+
+  /**
+   * Шаг записи встаёт в очередь. Отказ шага не должен ронять мост: незамеченный отказ
    * гасит процесс целиком, а ход обязан дойти до конца и сказать человеку про беду.
    */
-  const record = (step: Promise<void>): void => {
-    writes.push(
-      step.catch((error: unknown) => {
-        log.error('шаг хода не записан', { companyId, messageId, error: String(error) });
-        failed.push(1);
-      }),
-    );
+  const record = (step: () => Promise<void>): void => {
+    const next = queue.tail.then(step).catch((error: unknown) => {
+      log.error('шаг хода не записан', { companyId, messageId, error: String(error) });
+      failed.push(1);
+    });
+    queue.tail = next;
+    writes.push(next);
   };
 
-  /** Запись догоняет ход. Ответы записи держим: конец хода ложится последним. */
-  const tell = (ended: boolean): void => {
-    record(writeTurn(messageId, startedAt, stateOf(), ended));
+  /** Запись догоняет ход. Снимок журнала: поздние кадры лягут своей записью. */
+  const tell = (): void => {
+    record(() => writeTurn(messageId, [...frames]));
   };
 
-  /** Ход закончен: закрываем соединение и отдаём ответ наружу. */
-  const settle = (final: string): void => {
+  /** Ход закрыт: в журнале уже есть конец или отказ. Второй конец не пишется. */
+  const over = (): boolean => {
+    const last = frames.at(-1);
+    if (last === undefined) return false;
+    if (last.event.kind === 'ended') return true;
+    return last.event.kind === 'failed';
+  };
+
+  /**
+   * Ход закончен: закрываем журнал, пишем его в запись и отдаём ответ наружу.
+   * Срок, обрыв и отказ агента приходят сюда же — поэтому защита от второго конца.
+   */
+  const settle = (final: string, reason: string | undefined): void => {
+    if (over()) return;
+    if (reason === undefined) push({ kind: 'ended' });
+    if (reason !== undefined) push({ kind: 'failed', reason });
+    record(() => writeTurn(messageId, [...frames]));
     running.delete(lane);
     socket.close();
-    // Закрытые соединения больше не пишут: очередь обрывается на том, что успело лечь.
-    waiter.resolve({
-      text: final,
-      messageId,
-      startedAt,
-      state: { ...stateOf(), text: final },
-      stored: false,
-    });
+    waiter.resolve({ text: final, messageId, frames: [...frames], stored: false });
   };
 
   // Срок общий на ответ: сработает один раз, а повторное закрытие соединения безвредно.
-  const deadline = globalThis.setTimeout(() => settle(''), DEADLINE_MS);
+  const deadline = globalThis.setTimeout(() => settle(parts.join(''), undefined), DEADLINE_MS);
   socket.addEventListener('close', () => {
     globalThis.clearTimeout(deadline);
     // Соединение закрылось само — агент оборвал связь или упал: кадра не будет.
     // Отдаём то, что успело прийти, иначе запись хода и очередь чата повиснут.
-    settle(parts.join(''));
+    settle(parts.join(''), undefined);
   });
 
   socket.addEventListener('open', () => {
-    record(openTurn(conversationId, messageId));
+    record(() => openTurn(conversationId, messageId));
     say(room, { kind: 'started', conversationId, messageId });
     socket.send(JSON.stringify({ kind: 'ask', text: question }));
   });
@@ -293,39 +276,38 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     if (frame === undefined) return;
     if (frame.kind === 'chunk') {
       parts.push(frame.text);
-      written.push(1);
-      if (written.length % WRITE_EVERY_CHUNKS === 0) tell(false);
+      push({ kind: 'chunk', text: frame.text });
+      // Кусков всего — столько же, сколько в `parts`: счёт ведёт сам список.
+      if (parts.length % WRITE_EVERY_CHUNKS === 0) tell();
       say(room, { kind: 'chunk', conversationId, text: frame.text });
       return;
     }
-    // Ход работы идёт в комнату как есть: страница собирает из него строку.
+    // Ход работы идёт в комнату как есть: страница собирает из него круги.
     if (frame.kind === 'live') {
-      // Список приходит целиком и заменяет прошлый: берём последний кадр.
-      callLists.push(frame.calls);
-      thinkings.push(frame.thinking);
-      tell(false);
+      push({ kind: 'live', calls: frame.calls, thinking: frame.thinking });
+      tell();
       say(room, { kind: 'live', conversationId, calls: frame.calls, thinking: frame.thinking });
       return;
     }
     if (frame.kind === 'thought') {
-      thoughts.push(1);
-      tell(false);
+      push({ kind: 'thought' });
+      tell();
       say(room, { kind: 'thought', conversationId });
       return;
     }
     if (frame.kind === 'done') {
-      settle(parts.join(''));
+      settle(parts.join(''), undefined);
       return;
     }
     if (frame.kind === 'failed') {
       say(room, { kind: 'failed', conversationId, reason: frame.reason });
-      settle('');
+      settle('', frame.reason);
     }
   });
 
   socket.addEventListener('error', () => {
     say(room, { kind: 'failed', conversationId, reason: 'агент недоступен' });
-    settle('');
+    settle('', 'агент недоступен');
   });
 
   const answer = await waiter.promise;
@@ -365,23 +347,6 @@ const nameChat = async (companyId: string, conversationId: string, question: str
   } catch (error) {
     log.error('название чата не записано', { companyId, conversationId, error: String(error) });
   }
-};
-
-/** Пустой ход: агент не отвечал — и работы не было. */
-const emptyState = (): TurnState => ({ text: '', calls: [], thinking: false, thoughts: 0 });
-
-/** Последний кадр списка. Кадров не было — берём запасное значение. */
-const lastOf = <T>(lists: readonly (readonly T[])[], fallback: readonly T[]): readonly T[] => {
-  const last = lists.at(-1);
-  if (last === undefined) return fallback;
-  return last;
-};
-
-/** Последний кадр-признак. Кадров не было — берём запасное значение. */
-const lastFlag = (flags: readonly boolean[], fallback: boolean): boolean => {
-  const last = flags.at(-1);
-  if (last === undefined) return fallback;
-  return last;
 };
 
 /**
@@ -450,7 +415,6 @@ const turnOf = async (companyId: string, conversationId: string, question: strin
       say(room, { kind: 'failed', conversationId, reason: 'ответ агента не записан' });
       return;
     }
-    await writeTurn(answer.messageId, answer.startedAt, answer.state, true);
     await touchConversation(conversationId);
     log.info('ответ агента записан', { companyId, conversationId, length: answer.text.length });
     // Номер записи уходит странице: по нему её собранная реплика уступает записанной.

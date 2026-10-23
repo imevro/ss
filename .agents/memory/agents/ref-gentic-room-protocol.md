@@ -1,49 +1,49 @@
-# Адрес, ключ и кадры комнаты агента
+# Agent room: address, key and frames
 
-Агент — отдельный сервис. Подключение одно на вопрос: открыли, спросили,
-дождались конца, закрыли.
+The agent is a separate service. One connection per question: open, ask, wait for
+the end, close.
 
-## Дверь
+## Door
 
 ```
-GET <AGENT_URL>/room/<ключ>?token=<AGENT_SECRET>
+GET <AGENT_URL>/room/<key>?token=<AGENT_SECRET>
 ```
 
-- **Ключ** — `-<число>:<поток>`, строго по виду `^-\d+:\d+$`. Годятся `-1:0`,
-  `-2:0` и далее. Чужой вид — отказ 400.
-- **Пароль** сравнивается постоянным по времени способом. Неверный — 403.
-- **Запрос без перехода в вебсокет** — 426.
+- **Key** — `-<number>:<stream>`, strictly `^-\d+:\d+$`. `-1:0`, `-2:0` and so on work.
+  Any other shape is refused with 400.
+- **Password** is compared in constant time. A wrong one gives 403.
+- **A request without a websocket upgrade** gives 426.
 
-Число в ключе — своё у агента. Оно же его номер сессии: соединения с одним
-ключом ведут одну память.
+The number in the key is the agent's own. It is also his session number: connections
+with one key share one memory.
 
-## Кадры
+## Frames
 
-Наш → агенту:
+Ours to the agent:
 
-| Кадр | Значение |
+| Frame | Meaning |
 | --- | --- |
-| `{kind:'ask', text}` | Вопрос. |
-| `{kind:'stop'}` | Остановить ход. |
-| `{kind:'close'}` | Закрыть комнату. |
+| `{kind:'ask', text}` | The question. |
+| `{kind:'stop'}` | Stop the turn. |
+| `{kind:'close'}` | Close the room. |
 
-Агент → нам:
+Agent to us:
 
-| Кадр | Значение |
+| Frame | Meaning |
 | --- | --- |
-| `{kind:'started'}` | Ход начался. |
-| `{kind:'chunk', text}` | Кусок ответа. |
-| `{kind:'live', calls, thinking}` | Ход работы: **весь** список позванных инструментов и признак «думает сам агент». Список заменяет прошлый, не дополняет его. |
-| `{kind:'thought'}` | Один законченный кусок размышления. Считают по числу кадров. |
-| `{kind:'done'}` | Ход закончился. |
-| `{kind:'failed', reason}` | Ход сорвался. |
+| `{kind:'started'}` | The turn started. |
+| `{kind:'chunk', text}` | A piece of the answer. |
+| `{kind:'live', calls, thinking}` | The work: the **whole** list of called tools and the flag "the agent thinks". The list replaces the previous one, it does not add to it. |
+| `{kind:'thought'}` | One finished thought. They are counted by the number of frames. |
+| `{kind:'done'}` | The turn ended. |
+| `{kind:'failed', reason}` | The turn broke. |
 
-`calls` — список пар `{name, intent}`: имя инструмента и замысел, ради которого
-его позвали (`i` у omp). Замысла нет — в `intent` лежит имя. Список сбрасывается
-на новом вопросе: один ключ ведёт один ход за раз.
+`calls` is a list of `{name, intent}` pairs: the tool name and the intent it was
+called for (omp's `i`). No intent — `intent` carries the name. The list is reset on a
+new question: one key runs one turn at a time.
 
-## Что помнить
+## What to remember
 
-- Остановленный ход даёт только `done`: отличить остановку от полного ответа
-  по кадрам нельзя. Текст при этом уже ушёл кусками, он не повторяется.
-- Комната без вопроса не тратит ничего: сессия готова, но работы нет.
+- A stopped turn gives only `done`: frames cannot tell a stop from a full answer.
+  The text has already gone out in chunks and is not repeated.
+- A room without a question costs nothing: the session is ready, there is no work.

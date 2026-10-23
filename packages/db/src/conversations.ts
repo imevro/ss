@@ -29,7 +29,7 @@ export const conversations = pgTable(
   (t) => [index('conversations_company_last_message').on(t.companyId, t.lastMessageAt.desc())],
 );
 
-/** Запись ленты. `raw` держит ход работы: время, мысли, позванные инструменты. */
+/** Запись ленты. `raw` держит журнал хода: кадры ответа по порядку, из них выводится лента. */
 export const messages = pgTable(
   'messages',
   {
