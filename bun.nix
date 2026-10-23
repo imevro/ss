@@ -685,14 +685,6 @@
     url = "https://registry.npmjs.org/@oxc-project/types/-/types-0.152.0.tgz";
     hash = "sha512-oM/5rLBm2tPkg0iBgkH/FOeR3PCDpY19GTgAZjMFM8h9WI9VW7cLgzp6nwtarYKmovavIQZ+Fe/RKX/8C8O/Rw==";
   };
-  "@radix-ui/react-compose-refs@1.1.5" = fetchurl {
-    url = "https://registry.npmjs.org/@radix-ui/react-compose-refs/-/react-compose-refs-1.1.5.tgz";
-    hash = "sha512-+48PbAAbq3didjJxa+OaWY2ZwgAKsNiRGyeHKszblZMQ+kcpd9pAaT11cMkGEie0vsOi3QdeTE6d5Fe3Gn61kA==";
-  };
-  "@radix-ui/react-slot@1.3.3" = fetchurl {
-    url = "https://registry.npmjs.org/@radix-ui/react-slot/-/react-slot-1.3.3.tgz";
-    hash = "sha512-qx7oqnYbxnK9kYI9m317qmFmEgo6ywqWvbTogdj7cL9p3/yx4M48p7Rnw5z3H890cL/ow/EeWJsuTykeZVXP5Q==";
-  };
   "@react-router/dev@8.4.0" = fetchurl {
     url = "https://registry.npmjs.org/@react-router/dev/-/dev-8.4.0.tgz";
     hash = "sha512-GKznpn6h8c52xGXwtsypD5ZwNiWFSeqoKPdyGq7SfG+T9rFjGO8F0i/R/yECfZqHXaNz1NVmpODuBamBy9FfMg==";
@@ -808,6 +800,10 @@
   "@sec-ant/readable-stream@0.4.1" = fetchurl {
     url = "https://registry.npmjs.org/@sec-ant/readable-stream/-/readable-stream-0.4.1.tgz";
     hash = "sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==";
+  };
+  "@shadcn/react@0.3.1" = fetchurl {
+    url = "https://registry.npmjs.org/@shadcn/react/-/react-0.3.1.tgz";
+    hash = "sha512-2gOR0HDMtWeRsCZfNDaU0YDFdgH3zsDQ6lz67Fv/y/qjY9y+R8kJqAn6q56phqv7/zHi0wqURjntrNO9zL7vnQ==";
   };
   "@shadcn/registry@0.1.0" = fetchurl {
     url = "https://registry.npmjs.org/@shadcn/registry/-/registry-0.1.0.tgz";
@@ -3482,10 +3478,6 @@
   "update-browserslist-db@1.3.3" = fetchurl {
     url = "https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.3.3.tgz";
     hash = "sha512-pJ2sYawQS0R/WI928Gj5GlPhTGzbMelq0+4INtSYNDV9ErKJcX6xjGWkoG/VnB3dpUm00zALaqkrUD77pO5TDQ==";
-  };
-  "use-stick-to-bottom@1.1.6" = fetchurl {
-    url = "https://registry.npmjs.org/use-stick-to-bottom/-/use-stick-to-bottom-1.1.6.tgz";
-    hash = "sha512-z3Up8jYQGTkUCsGBnwg6/wj70KgXoW5Kz1AAc1j8MtQuYMBo6ZsdhrIXoegxa7gaMMilgQYyTohTrt3p94jHog==";
   };
   "use-sync-external-store@1.7.0" = fetchurl {
     url = "https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.7.0.tgz";
