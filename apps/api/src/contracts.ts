@@ -149,20 +149,20 @@ export const okSchema = z.object({ ok: z.boolean() });
  * Область платформы Cloudflare, которую видит кланкер. Список закрыт и расширяется
  * одной строкой; отказ перечисляет его целиком, поэтому кланкер не гадает.
  */
-export const AREAS = ['workers', 'durable_objects', 'd1'] as const;
+export const AREAS = ['workers', 'durable_objects', 'd1', 'r2', 'workflows'] as const;
 
 /** Предел срока жизни ключа в днях: тот же предел у проверки тела, что и у описания. */
 export const MAX_DAYS = 365;
 
 export const areaSchema = z
   .enum(AREAS)
-  .meta({ description: 'Область платформы: код бота, хранилище сообщений, база.' });
+  .meta({ description: 'Область платформы: код бота, хранилище сообщений, база, файлы, длинные ходы.' });
 
 /** Заказ ключа доступа к платформе. */
 export const keyBodySchema = z.object({
   name: z.string().min(1).meta({ description: 'Имя ключа для человека.' }),
   days: z.number().int().min(1).max(MAX_DAYS).optional().meta({ description: 'Срок жизни, дней. По умолчанию 365.' }),
-  areas: z.array(areaSchema).min(1).optional().meta({ description: 'Области платформы. По умолчанию все три.' }),
+  areas: z.array(areaSchema).min(1).optional().meta({ description: 'Области платформы. По умолчанию все.' }),
 });
 
 /** Ключ в списке: строки ключа в нём нет и не будет. */

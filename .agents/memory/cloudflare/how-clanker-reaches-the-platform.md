@@ -11,7 +11,12 @@ that company → the account in the path is ours → the scope from the key → 
 starts with the company name start in lowercase. Listings are closed (`GET` on the list of
 scripts, databases, namespaces — refused), the shared `workers/subdomain` setting is read
 only. Allowed paths: `workers/scripts`, `workers/services`, `workers/workers`,
-`workers/durable_objects/namespaces`, `d1/database`.
+`workers/durable_objects/namespaces`, `d1/database`, `r2/buckets`, `workflows`.
+
+The account key on the platform side must carry the permission of each area it serves: the
+proxy lets a path through, but Cloudflare refuses with its own `Authentication error` when the
+token lacks the grant. R2 is its own permission group (`Workers R2 Storage`); Workers
+permissions cover Workflows.
 
 A key outlives the person's membership on purpose: the membership is checked on every
 request, so leaving the company cuts access at once, not when the key expires.

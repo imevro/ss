@@ -51,6 +51,10 @@ const BASES: readonly { readonly area: string; readonly base: string }[] = [
   { area: 'workers', base: 'workers/workers' },
   { area: 'durable_objects', base: 'workers/durable_objects/namespaces' },
   { area: 'd1', base: 'd1/database' },
+  // Файлы: ведро адресуется именем, предметы внутри ведра — только своим ведром.
+  { area: 'r2', base: 'r2/buckets' },
+  // Длинные ходы: заводится выкладкой воркера, дальше адресуется именем самого хода.
+  { area: 'workflows', base: 'workflows' },
 ];
 
 /** Семьи, где ресурс адресуется ещё и номером: номер выдаёт платформа при создании. */
@@ -483,7 +487,8 @@ const PROXY_SPEC = {
     'Дальше путь такой же, как в API Cloudflare, но начинается с `/accounts/<номер>`, и этот',
     'номер — наш: чужой аккаунт закрыт. Разрешено: `workers/scripts`, `workers/services` и',
     '`workers/workers` — код бота, `workers/durable_objects/namespaces` — хранилище сообщений,',
-    '`d1/database` — база. Имя любого создаваемого ресурса обязано начинаться с начала имени',
+    '`d1/database` — база, `r2/buckets` — файлы, `workflows` — длинные ходы. Имя любого',
+    'создаваемого ресурса обязано начинаться с начала имени',
     'компании строчными (`comp-<номер>-`), поэтому чужой воркер того же аккаунта недоступен.',
     'Перечисления закрыты: обращайся к своим ресурсам по имени. Список самих методов — в',
     'документации Cloudflare (https://developers.cloudflare.com/llms.txt).',
