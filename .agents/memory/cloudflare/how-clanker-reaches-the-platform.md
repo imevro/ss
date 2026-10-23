@@ -38,9 +38,7 @@ lives:
 The entry address is our domain: `https://ss.erodionov.com/_api/v1/cloudflare`. The
 application lives on the `bychefs-vps` ep-infra box (152.53.133.232), Caddy strips the
 `/_api` prefix before the API. The laptop was the address only in the pilot, while there was
-no public address (the Cloudflare tunnel was also down then, see
-`gotcha-tunnel-port-is-closed.md`); it is not needed at the production step — for the
-clanker only the address prefix changes.
+no public address; it is not needed now — for the clanker only the address prefix changes.
 
 The hint for the clanker lies in its own tree: `.agents/memory/deploy/cloudflare-dostup.md`
 on the box (not duplicated in our repository).

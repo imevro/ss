@@ -94,5 +94,3 @@ jobs:
 
           curl -fsS --max-time 10 http://127.0.0.1:8787/health | grep -q '"ok":true'
           echo "api :8787/health -> ok"
-          curl -fsS --max-time 10 http://127.0.0.1:6890/health >/dev/null
-          echo "queue :6890/health -> ok"

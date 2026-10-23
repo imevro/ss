@@ -81,6 +81,17 @@ const parseJson = (raw: string): unknown => {
 const DEADLINE_MS = 600_000;
 
 /**
+ * Сколько раз стучимся в комнату агента. Машина агента просыпается на входящий
+ * запрос, поэтому первая попытка может не подняться: без повтора ход умирает от
+ * заминки на старте машины, а человек видит пустой ответ.
+ */
+const ROOM_ATTEMPTS = 4;
+/** Пауза между стуками: машина поднимается примерно за полторы секунды. */
+const ROOM_PAUSE_MS = 1000;
+/** Срок на один стук: повисшее рукопожатие не должно съедать срок ответа. */
+const ROOM_ATTEMPT_MS = 10_000;
+
+/**
  * Поток в ключе комнаты агента. Ключ — `-<число>:<поток>`
  * (`.agents/memory/agents/ref-gentic-room-protocol.md`); у нас один поток на чат.
  */
@@ -171,6 +182,65 @@ const dropTurn = async (messageId: string): Promise<void> => {
 };
 
 /**
+ * Один стук в комнату: открылось — отдаём соединение, закрылось или повисло —
+ * отказ. Срок на стук свой, иначе повисшее рукопожатие съело бы весь срок ответа.
+ */
+const knock = (url: string): Promise<WebSocket> => {
+  const { promise, resolve, reject } = Promise.withResolvers<WebSocket>();
+  const socket = new WebSocket(url);
+  // Второй отказ безвреден: у обещания один исход, а `close` после срока — обычное дело.
+  const timer = globalThis.setTimeout(() => {
+    socket.close();
+    reject(new Error('стук не открылся'));
+  }, ROOM_ATTEMPT_MS);
+  socket.addEventListener(
+    'open',
+    () => {
+      globalThis.clearTimeout(timer);
+      resolve(socket);
+    },
+    { once: true },
+  );
+  socket.addEventListener(
+    'close',
+    () => {
+      globalThis.clearTimeout(timer);
+      reject(new Error('стук не открылся'));
+    },
+    { once: true },
+  );
+  return promise;
+};
+
+/**
+ * Открыть комнату агента. Машина агента просыпается на входящий запрос, поэтому
+ * первый стук может не подняться: повторяем, пока комната не откроется или пока не
+ * кончатся попытки. Кончились — агент недоступен по-настоящему, и ход так и скажет.
+ */
+export const openRoom = async (url: string, attempt = 1): Promise<WebSocket> => {
+  try {
+    return await knock(url);
+  } catch (error: unknown) {
+    if (attempt >= ROOM_ATTEMPTS) throw new Error('агент недоступен', { cause: error });
+    await Bun.sleep(ROOM_PAUSE_MS);
+    return openRoom(url, attempt + 1);
+  }
+};
+
+/**
+ * Открыть комнату, а если не вышло — сказать об этом в чат. Ход без агента не должен
+ * молчать: человек получает отказ, а не пустой ответ.
+ */
+const openOrSay = async (url: string, room: string, conversationId: string): Promise<WebSocket | undefined> => {
+  try {
+    return await openRoom(url);
+  } catch (error: unknown) {
+    log.warn('агент недоступен', { conversationId, error: String(error) });
+    say(room, { kind: 'failed', conversationId, reason: 'агент недоступен' });
+  }
+};
+
+/**
  * Спросить агента и провести ответ в чат. Ответ копится в журнале кадров: память нужна
  * комнате, журнал — записи. Кусок уходит в комнату и в журнал одним и тем же кадром,
  * поэтому страница и база собирают ленту из одинаковых событий.
@@ -187,7 +257,17 @@ export const askAgent = async (companyId: string, conversationId: string, questi
   // Ключ не кодируем: у агента он читается из пути как есть, а вид его —
   // `-<число>:<поток>`, то есть только знаки, безопасные в пути.
   const url = `${config.agentUrl}/room/${key}?token=${encodeURIComponent(config.agentSecret)}`;
-  const socket = new WebSocket(url);
+  // Машина агента просыпается на входящий запрос: комната открывается с повтором,
+  // поэтому заминка на старте машины не съедает ход и не оставляет пустой ответ.
+  const socket = await openOrSay(url, room, conversationId);
+  if (socket === undefined) {
+    return {
+      text: '',
+      messageId: undefined,
+      frames: [{ at: new Date().toISOString(), event: { kind: 'failed', reason: 'агент недоступен' } }],
+      stored: false,
+    };
+  }
   const lane = laneOf(companyId, conversationId);
   // Остановка хода: агент отдаёт `done` на то, что успел, и очередь чата идёт дальше.
   const stop = (): void => {
@@ -265,12 +345,6 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     settle(parts.join(''), undefined);
   });
 
-  socket.addEventListener('open', () => {
-    record(() => openTurn(conversationId, messageId));
-    say(room, { kind: 'started', conversationId, messageId });
-    socket.send(JSON.stringify({ kind: 'ask', text: question }));
-  });
-
   socket.addEventListener('message', (message: MessageEvent<string>) => {
     const frame = frameOf(message.data);
     if (frame === undefined) return;
@@ -309,6 +383,11 @@ export const askAgent = async (companyId: string, conversationId: string, questi
     say(room, { kind: 'failed', conversationId, reason: 'агент недоступен' });
     settle('', 'агент недоступен');
   });
+
+  // Слушатели на месте, комната открыта: ход заводится и вопрос уходит одним кадром.
+  record(() => openTurn(conversationId, messageId));
+  say(room, { kind: 'started', conversationId, messageId });
+  socket.send(JSON.stringify({ kind: 'ask', text: question }));
 
   const answer = await waiter.promise;
   // Конец хода ложится последним: сперва то, что уже в пути, потом итог.

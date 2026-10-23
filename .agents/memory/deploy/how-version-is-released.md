@@ -21,9 +21,9 @@ the pinned `ss-deploy.service` through the system bus.
   from that tree in `/nix/store`, migrations run as `ss-migrate`, services start on the new
   address. Rollback is one generation.
 - After the switch the workflow polls and smoke-tests: web `:5404/login` must reach 200 and
-  API `:8787/health` must answer `{"ok":true}`. It also expects a queue answer on
-  `:6890/health` — that is the broker planned in `docs/architecture.md`; nothing in `apps/`
-  runs it, and `bunqueue` is a declared dependency with no import.
+  API `:8787/health` must answer `{"ok":true}`. A queue check on `:6890/health` was removed on
+  2026-10-23: the broker exists only on paper (`docs/architecture.md`), nothing in `apps/`
+  runs it, and the check failed every release while the deploy itself succeeded.
 
 So a release is not "hand out the code": publishing it puts it on the server.
 
